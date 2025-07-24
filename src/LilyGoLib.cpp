@@ -582,7 +582,6 @@ struct uBloxGnssModelInfo { // Structure to hold the module info (uses 341 bytes
     char extension[10][30];
 };
 
-
 LilyGoLib watch;
 
 

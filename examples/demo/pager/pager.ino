@@ -131,24 +131,6 @@ static RTC_DATA_ATTR int brightnessLevel = 0;
 
 // https://github.com/Xinyuan-LilyGO/TTGO_TWatch_Library/issues/234
 
-typedef  struct _lv_datetime {
-    lv_obj_t *obj;
-    const char *name;
-    uint16_t minVal;
-    uint16_t maxVal;
-    uint16_t defaultVal;
-    uint8_t digitFormat;
-} lv_datetime_t;
-
-static lv_datetime_t lv_datetime [] = {
-    {NULL, "Year", 2023, 2099, 2023, 4},
-    {NULL, "Mon", 1, 12, 4, 2},
-    {NULL, "Day", 1, 30, 12, 2},
-    {NULL, "Hour", 0, 24, 22, 2},
-    {NULL, "Min", 0, 59, 30, 2},
-    {NULL, "Sec", 0, 59, 0, 2}
-};
-
 void factory_ui();
 
 void productPinmap(lv_obj_t *parent);
@@ -163,7 +145,6 @@ void digitalClock2(lv_obj_t *parent);
 void devicesInformation(lv_obj_t *parent);
 void wifiscan(lv_obj_t *parent);
 void radioPingPong(lv_obj_t *parent);
-void datetimeVeiw(lv_obj_t *parent);
 void lilygo_qrcode(lv_obj_t *parent);
 
 void settingPMU();
@@ -297,13 +278,10 @@ void setup()
 {
     // Stop wifi
     WiFi.mode(WIFI_MODE_NULL);
-
     btStop();
-
     setCpuFrequencyMhz(160);
 
     Serial.begin(115200);
-
     watch.begin(&Serial);
 
     settingPMU();
@@ -311,9 +289,7 @@ void setup()
     settingRadio();
 
     beginLvglHelper(false);
-
     settingButtonStyle();
-
     factory_ui();
 
     usbPlugIn =  watch.isVbusIn();
@@ -646,7 +622,6 @@ void tileview_change_cb(lv_event_t *e)
 
 void factory_ui()
 {
-
     static lv_style_t bgStyle;
     lv_style_init(&bgStyle);
     lv_style_set_bg_color(&bgStyle, lv_color_black());
@@ -689,7 +664,6 @@ void factory_ui()
     wifiscan(t3_1);
 
     radioPingPong(t4);
-    datetimeVeiw(t7);
 
     uint32_t mask = watch.getDeviceProbe();
 
@@ -1734,186 +1708,6 @@ void createButton(lv_obj_t *parent, const char *txt, lv_event_cb_t event_cb)
     lv_label_set_text(label, txt);
     lv_obj_align_to(label, btn1, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_event_cb(btn1, event_cb, LV_EVENT_CLICKED, NULL);
-}
-
-static void lv_spinbox_event_cb(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_LONG_PRESSED_REPEAT) {
-        bool *inc =  (bool *)lv_event_get_user_data(e);
-        lv_obj_t *target = lv_event_get_current_target(e);
-        lv_datetime_t *datetime_obj =  (lv_datetime_t *)lv_obj_get_user_data(target);
-        if (!datetime_obj) {
-            Serial.println("datetime_obj is null");
-            return;
-        }
-        Serial.print(datetime_obj->name);
-
-        if (*inc) {
-            lv_spinbox_increment(datetime_obj->obj);
-        } else {
-            lv_spinbox_decrement(datetime_obj->obj);
-        }
-
-    }
-}
-
-lv_obj_t *createAdjustButton(lv_obj_t *parent, const char *txt, lv_event_cb_t event_cb, void *user_data)
-{
-    static lv_style_t cont_style;
-    lv_style_init(&cont_style);
-    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
-
-    lv_obj_t *label_cont = lv_obj_create(parent);
-    lv_obj_set_size(label_cont, 210, 90);
-    lv_obj_set_scrollbar_mode(label_cont, LV_SCROLLBAR_MODE_OFF);
-    // lv_obj_set_flex_flow(label_cont, LV_FLEX_FLOW_ROW);
-    lv_obj_set_scroll_dir(label_cont, LV_DIR_NONE);
-    lv_obj_set_style_pad_top(label_cont, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(label_cont, 2, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(label_cont, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(label_cont, 5, LV_PART_MAIN);
-    lv_obj_set_style_border_color(label_cont, DEFAULT_COLOR, LV_PART_MAIN);
-
-    lv_obj_t *label = lv_label_create(label_cont);
-    lv_label_set_text(label, txt);
-    lv_obj_set_style_text_font(label, &font_siegra, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 5, 0);
-
-
-    lv_obj_t *cont = lv_obj_create(label_cont);
-    lv_obj_set_size(cont, 185, 45);
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
-    lv_obj_set_scroll_dir(cont, LV_DIR_NONE);
-    lv_obj_align_to(cont, label, LV_ALIGN_OUT_BOTTOM_LEFT, -6, 5);
-
-    lv_obj_set_style_pad_all(cont, 1, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(cont, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(cont, 0, LV_PART_MAIN);
-
-    lv_coord_t w = 50;
-    lv_coord_t h = 40;
-    lv_obj_t *btn = lv_btn_create(cont);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_PLUS, 0);
-    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
-    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
-
-
-
-    static bool increment = 1;
-    static bool decrement = 0;
-    lv_obj_set_user_data(btn, user_data);
-    lv_obj_add_event_cb(btn, event_cb, LV_EVENT_ALL, &increment);
-
-    lv_obj_t *spinbox = lv_spinbox_create(cont);
-    lv_spinbox_set_step(spinbox, 1);
-    lv_spinbox_set_rollover(spinbox, false);
-    lv_spinbox_set_cursor_pos(spinbox, 0);
-
-    if (user_data) {
-        lv_datetime_t *datetime_obj = (lv_datetime_t *)user_data;
-        lv_spinbox_set_digit_format(spinbox, datetime_obj->digitFormat, 0);
-        lv_spinbox_set_range(spinbox, datetime_obj->minVal, datetime_obj->maxVal);
-        lv_spinbox_set_value(spinbox, datetime_obj->defaultVal);
-    }
-    lv_obj_set_width(spinbox, 65);
-    lv_obj_set_height(spinbox, h + 2);
-
-    lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_text_color(spinbox, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_border_color(spinbox, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_set_style_text_font(spinbox, &font_sandbox, LV_PART_MAIN);
-
-    // lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_SELECTED);
-    // lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_CURSOR);
-
-
-    btn = lv_btn_create(cont);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_MINUS, 0);
-    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
-    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
-    lv_obj_set_user_data(btn, user_data);
-    // lv_obj_add_event_cb(btn, lv_spinbox_decrement_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(btn, event_cb, LV_EVENT_ALL, &decrement);
-
-    return spinbox;
-}
-
-static void datetime_event_handler(lv_event_t *e)
-{
-    Serial.println("Save setting datetime.");
-    int32_t year =  lv_spinbox_get_value(lv_datetime[0].obj);
-    int32_t month =  lv_spinbox_get_value(lv_datetime[1].obj);
-    int32_t day =  lv_spinbox_get_value(lv_datetime[2].obj);
-    int32_t hour =  lv_spinbox_get_value(lv_datetime[3].obj);
-    int32_t minute =  lv_spinbox_get_value(lv_datetime[4].obj);
-    int32_t second =  lv_spinbox_get_value(lv_datetime[5].obj);
-
-    Serial.printf("Y=%dM=%dD=%d H:%dM:%dS:%d\n", year, month, day,
-                  hour, minute, second);
-
-    watch.setDateTime(year, month, day, hour, minute, second);
-
-    // Reading time synchronization from RTC to system time
-    watch.hwClockRead();
-}
-
-void datetimeVeiw(lv_obj_t *parent)
-{
-    //set default datetime
-    time_t now;
-    struct tm  info;
-    time(&now);
-    localtime_r(&now, &info);
-    lv_datetime[0].defaultVal = info.tm_year + 1900;
-    lv_datetime[1].defaultVal = info.tm_mon + 1;
-    lv_datetime[2].defaultVal = info.tm_mday;
-    lv_datetime[3].defaultVal = info.tm_hour;
-    lv_datetime[4].defaultVal = info.tm_min ;
-    lv_datetime[5].defaultVal = info.tm_sec ;
-
-
-    static lv_style_t cont_style;
-    lv_style_init(&cont_style);
-    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_line_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_border_width(&cont_style, 0);
-    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
-
-    lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, lv_disp_get_hor_res(NULL), 400);
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
-    lv_obj_add_style(cont, &cont_style, LV_PART_MAIN);
-
-    for (int i = 0; i < sizeof(lv_datetime) / sizeof(lv_datetime[0]); ++i) {
-        lv_datetime[i].obj =  createAdjustButton(cont, lv_datetime[i].name, lv_spinbox_event_cb, &(lv_datetime[i]));
-    }
-
-    lv_obj_t *btn_cont = lv_obj_create(cont);
-    lv_obj_set_size(btn_cont, 210, 60);
-    lv_obj_set_scrollbar_mode(btn_cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_scroll_dir(btn_cont, LV_DIR_NONE);
-    lv_obj_set_style_pad_top(btn_cont, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(btn_cont, 5, LV_PART_MAIN);
-    lv_obj_set_style_border_opa(btn_cont, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn_cont, LV_OPA_TRANSP, LV_PART_MAIN);
-
-    lv_obj_t *btn = lv_btn_create(btn_cont);
-    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_SAVE, 0);
-    lv_obj_set_size(btn, 180, 50);
-    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
-    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(btn, datetime_event_handler, LV_EVENT_CLICKED, NULL);
 }
 
 void settingButtonStyle()
