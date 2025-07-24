@@ -457,10 +457,10 @@ void PMUHandler()
             watch.incrementalBrightness(brightnessLevel);
             usbPlugIn = false;
         }
-        if (watch.isBatChagerDoneIrq()) {
+        if (watch.isBatChargeDoneIrq()) {
             Serial.println("isBatChagerDone");
         }
-        if (watch.isBatChagerStartIrq()) {
+        if (watch.isBatChargeStartIrq()) {
             Serial.println("isBatChagerStart");
         }
         // Clear watch Interrupt Status Register
