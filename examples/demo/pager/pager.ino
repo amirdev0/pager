@@ -36,7 +36,6 @@
 
 #define LVGL_MESSAGE_PROGRESS_CHANGED_ID        (88)
 #define RADIO_TRANSMIT_PAGE_ID                  9
-#define WIFI_SCAN_PAGE_ID                       8
 
 #define DEFAULT_SCREEN_TIMEOUT                  15*1000
 #define DEFAULT_COLOR                           (lv_color_make(252, 218, 72))
@@ -82,7 +81,6 @@ static lv_obj_t *min_img;
 static lv_obj_t *sec_img;
 static lv_obj_t *tileview;
 static lv_obj_t *radio_ta;
-static lv_obj_t *wifi_table_list;
 static lv_obj_t *label_datetime;
 static lv_obj_t *charge_cont;
 static lv_obj_t *gnss_label;
@@ -94,6 +92,7 @@ static lv_style_t button_default_style;
 static lv_style_t button_press_style;
 // Save the ID of the current page
 static uint8_t pageId = 0;
+
 /*
 * USB cannot be used in light sleep mode.
 * If you need to re-upload sketch, please keep the watch not in sleep mode,
@@ -143,7 +142,6 @@ void digitalClock(lv_obj_t *parent);
 void digitalClock2(lv_obj_t *parent);
 
 void devicesInformation(lv_obj_t *parent);
-void wifiscan(lv_obj_t *parent);
 void radioPingPong(lv_obj_t *parent);
 void lilygo_qrcode(lv_obj_t *parent);
 
@@ -204,79 +202,9 @@ const float radio_power_args_list[] = {2, 5, 10, 12, 17, 20, 22};
 #define RADIO_BW_DROP_INDEX         0
 #define RADIO_TX_POWER_DROP_INDEX   6
 
-
-void WiFiScanDone(WiFiEvent_t event, WiFiEventInfo_t info)
-{
-    Serial.println("WiFiScanDone");
-    if (pageId != WIFI_SCAN_PAGE_ID) {
-        canScreenOff = true;
-        WiFi.removeEvent(WiFiEvent_t::ARDUINO_EVENT_WIFI_SCAN_DONE);
-        WiFi.mode(WIFI_OFF);
-        return;
-    }
-
-    int16_t counter =  WiFi.scanComplete();
-
-    lv_table_set_row_cnt(wifi_table_list, counter);
-
-    for (int i = 0; i < counter; ++i) {
-
-        lv_table_set_cell_value_fmt(wifi_table_list, i, 0,
-                                    LV_SYMBOL_WIFI"[%4d]"" %-10.10s",
-                                    WiFi.RSSI(i),
-                                    WiFi.SSID(i).c_str()
-                                   );
-
-        // Print SSID and RSSI for each network found
-        Serial.printf("%2d", i + 1);
-        Serial.print(" | ");
-        Serial.printf("%-32.32s", WiFi.SSID(i).c_str());
-        Serial.print(" | ");
-        Serial.printf("%4d", WiFi.RSSI(i));
-        Serial.print(" | ");
-        Serial.printf("%2d", WiFi.channel(i));
-        Serial.print(" | ");
-        switch (WiFi.encryptionType(i)) {
-        case WIFI_AUTH_OPEN:
-            Serial.print("open");
-            break;
-        case WIFI_AUTH_WEP:
-            Serial.print("WEP");
-            break;
-        case WIFI_AUTH_WPA_PSK:
-            Serial.print("WPA");
-            break;
-        case WIFI_AUTH_WPA2_PSK:
-            Serial.print("WPA2");
-            break;
-        case WIFI_AUTH_WPA_WPA2_PSK:
-            Serial.print("WPA+WPA2");
-            break;
-        case WIFI_AUTH_WPA2_ENTERPRISE:
-            Serial.print("WPA2-EAP");
-            break;
-        case WIFI_AUTH_WPA3_PSK:
-            Serial.print("WPA3");
-            break;
-        case WIFI_AUTH_WPA2_WPA3_PSK:
-            Serial.print("WPA2+WPA3");
-            break;
-        case WIFI_AUTH_WAPI_PSK:
-            Serial.print("WAPI");
-            break;
-        default:
-            Serial.print("unknown");
-        }
-        Serial.println();
-    }
-    //Keep scan
-    WiFi.scanNetworks(true);
-    canScreenOff = false;
-}
-
 void setup()
 {
-    // Stop wifi
+
     WiFi.mode(WIFI_MODE_NULL);
     btStop();
     setCpuFrequencyMhz(160);
@@ -560,8 +488,7 @@ void loop()
             usbPlugIn) {
         if (!screenTimeout) {
             if (usbPlugIn &&
-                    (pageId != WIFI_SCAN_PAGE_ID &&
-                     pageId != RADIO_TRANSMIT_PAGE_ID)
+                    (pageId != RADIO_TRANSMIT_PAGE_ID)
                ) {
                 createChargeUI();
             }
@@ -590,25 +517,11 @@ void tileview_change_cb(lv_event_t *e)
     Serial.println(pageId);
 
     switch (pageId) {
-    case WIFI_SCAN_PAGE_ID:
-        if ((WiFi.getStatusBits() & WIFI_SCANNING_BIT) != WIFI_SCANNING_BIT ) {
-            Serial.println("scanNetworks");
-            WiFi.onEvent(WiFiScanDone, WiFiEvent_t::ARDUINO_EVENT_WIFI_SCAN_DONE);
-            WiFi.mode(WIFI_STA);
-            WiFi.scanNetworks(true);
-            canScreenOff = false;
-        }
-        break;
     case RADIO_TRANSMIT_PAGE_ID:
         lv_timer_resume(transmitTask);
         canScreenOff = false;
         break;
     default:
-        if (WiFi.getMode() != WIFI_OFF ) {
-            WiFi.removeEvent(WiFiEvent_t::ARDUINO_EVENT_WIFI_SCAN_DONE);
-            WiFi.mode(WIFI_OFF);
-            Serial.println("WiFi.mode(WIFI_OFF);");
-        }
         if (!transmitTask->paused) {
             lv_timer_pause(transmitTask);
             Serial.println("lv_timer_pause transmitTask");
@@ -641,11 +554,7 @@ void factory_ui()
     lv_obj_t *t2_3 = lv_tileview_add_tile(tileview, 1, 3, LV_DIR_TOP | LV_DIR_BOTTOM);
 
     lv_obj_t *t3 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
-    lv_obj_t *t3_1 = lv_tileview_add_tile(tileview, 2, 1, LV_DIR_TOP | LV_DIR_BOTTOM);
-
-
     lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
-
     lv_obj_t *t7 = lv_tileview_add_tile(tileview, 6, 0, LV_DIR_HOR);
 
 
@@ -661,8 +570,6 @@ void factory_ui()
     digitalClock(t2_3);
 
     devicesInformation(t3);
-    wifiscan(t3_1);
-
     radioPingPong(t4);
 
     uint32_t mask = watch.getDeviceProbe();
@@ -1223,58 +1130,6 @@ void devicesInformation(lv_obj_t *parent)
     // lv_obj_t *sw = lv_switch_create(parent);
     // lv_obj_align(sw, LV_ALIGN_BOTTOM_RIGHT, -20, -40);
     // lv_obj_add_event_cb(sw, light_sw_event_cb, LV_EVENT_VALUE_CHANGED, sw);
-}
-
-void wifiscan(lv_obj_t *parent)
-{
-    static lv_style_t cont_style;
-    lv_style_init(&cont_style);
-    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_line_opa(&cont_style, LV_OPA_50);
-    lv_style_set_border_width(&cont_style, 5);
-    lv_style_set_border_color(&cont_style, DEFAULT_COLOR);
-    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
-    lv_style_set_pad_right(&cont_style, 0);
-    lv_style_set_pad_left(&cont_style, 0);
-
-    lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, lv_disp_get_hor_res(NULL), LV_PCT(100));
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
-    lv_obj_add_style(cont, &cont_style, LV_PART_MAIN);
-
-
-    lv_obj_t *label = lv_label_create(cont);
-    lv_label_set_text(label, "Scaning...");
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL);
-    lv_obj_align_to(label, NULL, LV_ALIGN_TOP_MID, 0, 2);
-
-
-    static lv_style_t table_style;
-    lv_style_init(&table_style);
-    lv_style_set_bg_opa(&table_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&table_style, LV_OPA_TRANSP);
-    lv_style_set_line_opa(&table_style, LV_OPA_50);
-    lv_style_set_border_width(&table_style, 1);
-    lv_style_set_border_color(&table_style, DEFAULT_COLOR);
-    lv_style_set_text_color(&table_style, DEFAULT_COLOR);
-    lv_style_set_text_font(&table_style, &lv_font_montserrat_16);
-
-
-    wifi_table_list = lv_table_create(cont);
-    lv_obj_set_scroll_dir(wifi_table_list, LV_DIR_VER);
-    lv_obj_set_size(wifi_table_list, LV_PCT(100), LV_PCT(100));
-
-    lv_table_set_col_width(wifi_table_list, 0, lv_disp_get_ver_res(NULL) - 20);
-    lv_table_set_row_cnt(wifi_table_list, 1);
-    lv_table_set_col_cnt(wifi_table_list, 1);
-
-    lv_obj_add_style(wifi_table_list, &table_style, LV_PART_ITEMS);
-    lv_obj_add_style(wifi_table_list, &table_style, LV_PART_MAIN);
-
-    lv_obj_align_to(wifi_table_list, label, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 }
 
 static void radio_rxtx_cb(lv_event_t *e)
