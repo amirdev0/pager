@@ -9,9 +9,7 @@
 
 #include "LilyGoLib.h"
 
-#ifdef USING_TWATCH_S3
 SPIClass radioBus =  SPIClass(HSPI);
-#endif
 
 
 void deviceScan(TwoWire *_port, Stream *stream)
@@ -212,23 +210,11 @@ bool LilyGoLib::begin(Stream *stream)
         devices_probe |= WATCH_DRV_ONLINE;
     }
 
-    log_println("Init GPS");
-    res = initGPS();
-    if (res) {
-        log_println("UBlox GPS init succeeded, using UBlox GPS Module\n");
-        devices_probe |= WATCH_GPS_ONLINE;
-    } else {
-        log_println("Warning: Failed to find UBlox GPS Module\n");
-        // if not detect gps , turn off dc3
-        disableDC3();
-    }
-
-#ifdef USING_TWATCH_S3
     log_println("Init Radio SPI Bus");
     radioBus.begin(BOARD_RADIO_SCK,
                    BOARD_RADIO_MISO,
                    BOARD_RADIO_MOSI);
-#endif
+
 
     beginCore();
 
@@ -282,20 +268,12 @@ uint16_t LilyGoLib::readBMA()
 
 uint64_t LilyGoLib::readPMU()
 {
-#ifdef USING_TWATCH_S3
     return XPowersAXP2101::getIrqStatus();
-#else
-    return XPowersAXP202::getIrqStatus();
-#endif
 }
 
 void LilyGoLib::clearPMU()
 {
-#ifdef USING_TWATCH_S3
     XPowersAXP2101::clearIrqStatus();
-#else
-    XPowersAXP202::clearIrqStatus();
-#endif
 }
 
 bool LilyGoLib::readRTC()
@@ -377,7 +355,6 @@ void LilyGoLib::incrementalBrightness(uint8_t target_level, uint32_t delay_ms)
 
 bool LilyGoLib::beginPower()
 {
-#ifdef USING_TWATCH_S3
     bool res =  XPowersAXP2101::init(Wire, BOARD_I2C_SDA, BOARD_I2C_SCL);
     if (!res) {
         return false;
@@ -516,19 +493,6 @@ bool LilyGoLib::beginPower()
     setButtonBatteryChargeVoltage(3300);
 
     enableButtonBatteryCharge();
-#else
-
-    bool res =  XPowersAXP202::init(Wire);
-    if (!res) {
-        return false;
-    }
-    //In the 2020V1 version, the ST7789 chip power supply
-    //is shared with the backlight, so LDO2 cannot be turned off
-    setLDO2Voltage(3300);
-    enableLDO2();
-
-#endif
-
 
     return true;
 }
@@ -568,56 +532,9 @@ void LilyGoLib::powerIoctl(enum PowerCtrlChannel ch, bool enable)
     case WATCH_POWER_DRV2605:
         enable ? enableBLDO2() : disableBLDO2();
         break;
-    // GPS , (The version with BOOT button and RST on the back cover)
-    case WATCH_POWER_GPS:
-        enable ? enableBLDO1() : disableBLDO1();
-        break;
-    // GPS , Earlier versions use DC3 (without BOOT button and RST)
-    case WATCH_POWER_GPS_DC_CHANNEL:
-        enable ? enableDC3() : disableDC3();
-        break;
     default:
         break;
     }
-}
-
-bool LilyGoLib::initMicrophone()
-{
-    static i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM),
-        .sample_rate =  MIC_I2S_SAMPLE_RATE,
-        .bits_per_sample = MIC_I2S_BITS_PER_SAMPLE,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-        .communication_format = I2S_COMM_FORMAT_STAND_PCM_SHORT,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 6,
-        .dma_buf_len = 512,
-        .use_apll = true
-    };
-
-    static i2s_pin_config_t i2s_cfg = {0};
-    i2s_cfg.bck_io_num   = I2S_PIN_NO_CHANGE;
-    i2s_cfg.ws_io_num    = BOARD_MIC_CLOCK;
-    i2s_cfg.data_out_num = I2S_PIN_NO_CHANGE;
-    i2s_cfg.data_in_num  = BOARD_MIC_DATA;
-    i2s_cfg.mck_io_num = I2S_PIN_NO_CHANGE;
-
-    if (i2s_driver_install(MIC_I2S_PORT, &i2s_config, 0, NULL) != ESP_OK) {
-        log_println("i2s_driver_install error");
-        return false;
-    }
-
-    if (i2s_set_pin(MIC_I2S_PORT, &i2s_cfg) != ESP_OK) {
-        log_println("i2s_set_pin error");
-        return false;
-    }
-    log_println("Microphone init done .");
-    return true;
-}
-
-bool LilyGoLib::readMicrophone(void *dest, size_t size, size_t *bytes_read, TickType_t ticks_to_wait)
-{
-    return i2s_read(MIC_I2S_PORT, dest, size, bytes_read, ticks_to_wait) == ESP_OK;
 }
 
 void LilyGoLib::setSleepMode(SleepMode_t mode)
@@ -627,9 +544,7 @@ void LilyGoLib::setSleepMode(SleepMode_t mode)
 
 void LilyGoLib::sleepLora(bool config)
 {
-#ifdef USING_TWATCH_S3
     // SX126x::sleep(config);
-#endif
 }
 
 void LilyGoLib::sleep(uint32_t second)
@@ -665,155 +580,7 @@ struct uBloxGnssModelInfo { // Structure to hold the module info (uses 341 bytes
     char hardwareVersion[10];
     uint8_t extensionNo = 0;
     char extension[10][30];
-} ;
-
-
-bool LilyGoLib::gpsProbe()
-{
-    uint8_t buffer[256];
-    bool legacy_ubx_message = true;
-    struct uBloxGnssModelInfo info ;
-    //  Get UBlox GPS module version
-    uint8_t cfg_get_hw[] =  {0xB5, 0x62, 0x0A, 0x04, 0x00, 0x00, 0x0E, 0x34};
-    GPSSerial.write(cfg_get_hw, sizeof(cfg_get_hw));
-
-    uint16_t len = getAck(buffer, 256, 0x0A, 0x04);
-    if (len) {
-        memset(&info, 0, sizeof(info));
-        uint16_t position = 0;
-        for (int i = 0; i < 30; i++) {
-            info.softVersion[i] = buffer[position];
-            position++;
-        }
-        for (int i = 0; i < 10; i++) {
-            info.hardwareVersion[i] = buffer[position];
-            position++;
-        }
-
-        while (len >= position + 30) {
-            for (int i = 0; i < 30; i++) {
-                info.extension[info.extensionNo][i] = buffer[position];
-                position++;
-            }
-            info.extensionNo++;
-            if (info.extensionNo > 9)
-                break;
-        }
-
-        log_i("Module Info : ");
-        log_i("Soft version: %s", info.softVersion);
-        log_i("Hard version: %s", info.hardwareVersion);
-        log_i("Extensions: %d", info.extensionNo);
-        for (int i = 0; i < info.extensionNo; i++) {
-            log_i("%s", info.extension[i]);
-        }
-        log_i("Model:%s", info.extension[2]);
-
-        for (int i = 0; i < info.extensionNo; ++i) {
-            if (!strncmp(info.extension[i], "OD=", 3)) {
-                strcpy((char *)buffer, &(info.extension[i][3]));
-                log_i("GPS Model: %s", (char *)buffer);
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
-
-int LilyGoLib::getAck(uint8_t *buffer, uint16_t size, uint8_t requestedClass, uint8_t requestedID)
-{
-    uint16_t    ubxFrameCounter = 0;
-    bool        ubxFrame = 0;
-    uint32_t    startTime = millis();
-    uint16_t    needRead;
-
-    while (millis() - startTime < 800) {
-        while (GPSSerial.available()) {
-            int c = GPSSerial.read();
-            switch (ubxFrameCounter) {
-            case 0:
-                if (c == 0xB5) {
-                    ubxFrameCounter++;
-                }
-                break;
-            case 1:
-                if (c == 0x62) {
-                    ubxFrameCounter++;
-                } else {
-                    ubxFrameCounter = 0;
-                }
-                break;
-            case 2:
-                if (c == requestedClass) {
-                    ubxFrameCounter++;
-                } else {
-                    ubxFrameCounter = 0;
-                }
-                break;
-            case 3:
-                if (c == requestedID) {
-                    ubxFrameCounter++;
-                } else {
-                    ubxFrameCounter = 0;
-                }
-                break;
-            case 4:
-                needRead = c;
-                ubxFrameCounter++;
-                break;
-            case 5:
-                needRead |=  (c << 8);
-                ubxFrameCounter++;
-                break;
-            case 6:
-                if (needRead >= size) {
-                    ubxFrameCounter = 0;
-                    break;
-                }
-                if (GPSSerial.readBytes(buffer, needRead) != needRead) {
-                    ubxFrameCounter = 0;
-                } else {
-                    return needRead;
-                }
-                break;
-
-            default:
-                break;
-            }
-        }
-    }
-    return 0;
-}
-
-bool LilyGoLib::initGPS()
-{
-    GPSSerial.begin(38400, SERIAL_8N1, SHIELD_GPS_RX, SHIELD_GPS_TX);
-    return gpsProbe();
-}
-
-bool LilyGoLib::factoryGPS()
-{
-    uint8_t buffer[256];
-    // Revert module Clear, save and load configurations
-    // B5 62 06 09 0D 00 FF FB 00 00 00 00 00 00  FF FF 00 00 17 2B 7E
-    uint8_t _legacy_message_reset[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2B, 0x7E };
-    GPSSerial.write(_legacy_message_reset, sizeof(_legacy_message_reset));
-    if (!getAck(buffer, 256, 0x05, 0x01)) {
-        return false;
-    }
-    delay(50);
-
-    // UBX-CFG-RATE, Size 8, 'Navigation/measurement rate settings'
-    uint8_t cfg_rate[] = {0xB5, 0x62, 0x06, 0x08, 0x00, 0x00, 0x0E, 0x30};
-    GPSSerial.write(cfg_rate, sizeof(cfg_rate));
-    if (!getAck(buffer, 256, 0x06, 0x08)) {
-        return false;
-    }
-    log_i("GPS reset successes!");
-    return true;
-}
-
+};
 
 
 LilyGoLib watch;

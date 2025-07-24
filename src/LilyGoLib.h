@@ -10,12 +10,6 @@
 
 #include <Arduino.h>
 
-
-// Please check the manual installation method. Please do not install from the board installation manager, some files will be missing.
-#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(2,0,5)
-#error "Please manually update and install Arduino Core ESP32 to the latest version, how to update, please see here https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html#windows-manual-installation"
-#endif
-
 #include <FFat.h>
 #include <FS.h>
 #include <Wire.h>
@@ -29,42 +23,37 @@
 #include <RadioLib.h>
 #include "LilyGoLib_Warning.h"
 #include <driver/i2s.h>
+
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,0,0)
-#include <driver/temp_sensor.h>
+  #include <driver/temp_sensor.h>
 #else
-#include <driver/temperature_sensor.h>
+  #include <driver/temperature_sensor.h>
 #endif
 
-
-#if CONFIG_IDF_TARGET_ESP32S3
 #ifndef USING_TWATCH_S3
 #define USING_TWATCH_S3
 #endif
-#elif CONFIG_IDF_TARGET_ESP32
-#ifndef USING_WATCH_2020
-#define USING_WATCH_2020
-#endif
-#endif
+
 
 #if !LV_VERSION_CHECK(8,3,11)
-#warning "The current version of lvgl does not match the development version, and it is not guaranteed that the sample program can be compiled and run normally"
+  #warning "The current version of lvgl does not match the development version, and it is not guaranteed that the sample program can be compiled and run normally"
 #endif
 
 #if LV_SPRINTF_USE_FLOAT != 1
-#warning "Lvgl floating point support is not enabled, and some examples may not be available"
+  #warning "Lvgl floating point support is not enabled, and some examples may not be available"
 #endif
 
 #if LV_USE_FS_POSIX != 1 || LV_FS_POSIX_LETTER != 'A'
-#warning "Lvgl fs mismatch, may not be able to use fs function"
+  #warning "Lvgl fs mismatch, may not be able to use fs function"
 #endif
 
 
 #ifdef I2C_SDA
-#undef I2C_SDA
+  #undef I2C_SDA
 #endif
 
 #ifdef I2C_SCL
-#undef I2C_SCL
+  #undef I2C_SCL
 #endif
 
 
@@ -177,18 +166,11 @@ public:
     void lowPower();
     void highPower();
 
-    bool initMicrophone();
-
-    bool readMicrophone(void *dest, size_t size, size_t *bytes_read, TickType_t ticks_to_wait = portMAX_DELAY);
-
     void sleepLora(bool config);
     void setSleepMode(SleepMode_t mode);
 
     void sleep(uint32_t second = 0) ;
 
-    bool initGPS();
-    bool factoryGPS();
-    bool gpsProbe();
     void powerIoctl(enum PowerCtrlChannel ch, bool enable);
 
     uint32_t getDeviceProbe();
@@ -197,12 +179,9 @@ public:
     
 private:
 
-    int getAck(uint8_t *buffer, uint16_t size, uint8_t requestedClass, uint8_t requestedID);
     void log_println(const char *message);
     bool beginPower();
     void beginCore();
-
-
 
     uint8_t brightness;
     Stream *stream;
