@@ -29,11 +29,6 @@
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 
-#include <WiFi.h>
-#include <driver/i2s.h>
-#include <driver/gpio.h>
-
-
 #define LVGL_MESSAGE_PROGRESS_CHANGED_ID        (88)
 #define RADIO_TRANSMIT_PAGE_ID                  9
 
@@ -550,8 +545,6 @@ void factory_ui()
     lv_obj_t *t2_3 = lv_tileview_add_tile(tileview, 1, 3, LV_DIR_TOP | LV_DIR_BOTTOM);
     lv_obj_t *t3 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
     lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
-    lv_obj_t *t7 = lv_tileview_add_tile(tileview, 6, 0, LV_DIR_HOR);
-
 
     productPinmap(t1);
 

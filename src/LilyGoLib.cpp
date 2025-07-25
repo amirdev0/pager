@@ -115,14 +115,14 @@ bool LilyGoLib::begin(Stream *stream)
     setTextFont(2);
     fillScreen(TFT_BLACK);
 
-    log_println("Init FFat");
-    if (!FFat.begin()) {
+    log_println("Init LittleFS");
+    if (!LittleFS.begin()) {
 
         if (bootDisplay) {
             setBrightness(50);
-            drawString("Format FFat...", 120, 120);
+            drawString("Format LittleFS...", 120, 120);
         }
-        FFat.format();
+        LittleFS.format();
     }
 
     if (bootDisplay) {

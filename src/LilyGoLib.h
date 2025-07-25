@@ -9,12 +9,12 @@
 #pragma once
 
 #include <Arduino.h>
-
-#include <FFat.h>
-#include <FS.h>
+#include <WiFi.h>
+#include <LittleFS.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
 #include <lvgl.h>
+
 #include "XPowersLib.h"
 #include <TouchDrvFT6X36.hpp>
 #include <SensorBMA423.hpp>
@@ -22,8 +22,8 @@
 #include <SensorDRV2605.hpp>
 #include <RadioLib.h>
 #include "LilyGoLib_Warning.h"
-#include <driver/i2s.h>
 
+#include <driver/gpio.h>
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,0,0)
   #include <driver/temp_sensor.h>
 #else
@@ -71,9 +71,6 @@
     TFT_WIDTH       != BOARD_TFT_WIDTH || \
     TFT_HEIGHT      != BOARD_TFT_HEIHT
 #error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
-#error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
-#error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
-#error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
 #endif
 
 #define WATCH_RADIO_ONLINE          _BV(0)
@@ -88,12 +85,6 @@
 #define LEDC_BACKLIGHT_CHANNEL      3
 #define LEDC_BACKLIGHT_BIT_WIDTH    8
 #define LEDC_BACKLIGHT_FREQ         1000
-
-// !The PDM microphone can only be up to 16KHZ and cannot be changed
-#define MIC_I2S_SAMPLE_RATE         16000
-// !The PDM microphone can only use I2S channel 0 and cannot be changed
-#define MIC_I2S_PORT                I2S_NUM_0
-#define MIC_I2S_BITS_PER_SAMPLE     I2S_BITS_PER_SAMPLE_16BIT
 
 typedef enum {
     PMU_BTN_WAKEUP,
