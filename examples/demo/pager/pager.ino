@@ -143,7 +143,6 @@ void digitalClock2(lv_obj_t *parent);
 
 void devicesInformation(lv_obj_t *parent);
 void radioPingPong(lv_obj_t *parent);
-void lilygo_qrcode(lv_obj_t *parent);
 
 void settingPMU();
 void settingSensor();
@@ -545,23 +544,16 @@ void factory_ui()
     lv_obj_add_event_cb(tileview, tileview_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *t1 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
-    lv_obj_t *t1_0 = lv_tileview_add_tile(tileview, 0, 1, LV_DIR_TOP | LV_DIR_BOTTOM);
-    lv_obj_t *t1_1 = lv_tileview_add_tile(tileview, 0, 2, LV_DIR_TOP | LV_DIR_BOTTOM);
-
     lv_obj_t *t2 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
     lv_obj_t *t2_1 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_TOP | LV_DIR_BOTTOM);
     lv_obj_t *t2_2 = lv_tileview_add_tile(tileview, 1, 2, LV_DIR_TOP | LV_DIR_BOTTOM);
     lv_obj_t *t2_3 = lv_tileview_add_tile(tileview, 1, 3, LV_DIR_TOP | LV_DIR_BOTTOM);
-
     lv_obj_t *t3 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
     lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
     lv_obj_t *t7 = lv_tileview_add_tile(tileview, 6, 0, LV_DIR_HOR);
 
 
     productPinmap(t1);
-    lilygo_qrcode(t1_0, "https://www.lilygo.cc/", "Official website");
-    lilygo_qrcode(t1_1, "https://github.com/Xinyuan-LilyGO/TTGO_TWatch_Library", "Github website");
-
 
     analogclock(t2);
     analogclock2(t2_1);
@@ -735,26 +727,6 @@ void productPinmap(lv_obj_t *parent)
 
     lv_obj_add_event_cb(table, draw_part_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
 
-}
-
-void lilygo_qrcode(lv_obj_t *parent, const char *url, const char *str)
-{
-    lv_color_t bg_color = lv_palette_lighten(LV_PALETTE_YELLOW, 5);
-    lv_color_t fg_color = lv_palette_darken(LV_PALETTE_YELLOW, 4);
-    lv_coord_t size = 150;
-    lv_obj_t *qr = lv_qrcode_create(parent, size, fg_color, bg_color);
-
-    lv_qrcode_update(qr, url, strlen(url));
-    lv_obj_center(qr);
-    /*Add a border with bg_color*/
-    lv_obj_set_style_border_color(qr, bg_color, 0);
-    lv_obj_set_style_border_width(qr, 5, 0);
-
-    lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, str );
-    lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &font_sandbox, LV_PART_MAIN);
-    lv_obj_align_to(label, qr, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 }
 
 void analogclock(lv_obj_t *parent)
