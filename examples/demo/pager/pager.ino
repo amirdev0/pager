@@ -30,7 +30,7 @@
 #include <LV_Helper.h>
 
 #define LVGL_MESSAGE_PROGRESS_CHANGED_ID        (88)
-#define RADIO_TRANSMIT_PAGE_ID                  9
+#define RADIO_TRANSMIT_PAGE_ID                  3
 
 #define DEFAULT_SCREEN_TIMEOUT                  15*1000
 #define DEFAULT_COLOR                           (lv_color_make(252, 218, 72))
@@ -67,10 +67,6 @@ LV_IMG_DECLARE(watch_if_6);
 LV_IMG_DECLARE(watch_if_8);
 
 
-static lv_obj_t *battery_percent;
-static lv_obj_t *weather_celsius;
-static lv_obj_t *step_counter;
-
 static lv_obj_t *hour_img;
 static lv_obj_t *min_img;
 static lv_obj_t *sec_img;
@@ -78,7 +74,6 @@ static lv_obj_t *tileview;
 static lv_obj_t *radio_ta;
 static lv_obj_t *label_datetime;
 static lv_obj_t *charge_cont;
-static lv_obj_t *gnss_label;
 
 static lv_timer_t *transmitTask;
 static lv_timer_t *clockTimer;
@@ -122,22 +117,33 @@ static uint32_t configTransmitInterval = 0;
 // Save brightness value
 static RTC_DATA_ATTR int brightnessLevel = 0;
 
+typedef  struct _lv_datetime {
+    lv_obj_t *obj;
+    const char *name;
+    uint16_t minVal;
+    uint16_t maxVal;
+    uint16_t defaultVal;
+    uint8_t digitFormat;
+} lv_datetime_t;
+
+static lv_datetime_t lv_datetime [] = {
+    {NULL, "Yil", 2025, 2099, 2025, 4},
+    {NULL, "Oy", 1, 12, 8, 2},
+    {NULL, "Kun", 1, 30, 1, 2},
+    {NULL, "Soat", 0, 24, 0, 2},
+    {NULL, "Daqiqa", 0, 59, 0, 2},
+    {NULL, "Sonya", 0, 59, 0, 2}
+};
 
 // https://github.com/Xinyuan-LilyGO/TTGO_TWatch_Library/issues/234
 
 void factory_ui();
 
-void productPinmap(lv_obj_t *parent);
-void analogclock(lv_obj_t *parent);
-void analogclock2(lv_obj_t *parent);
+void datetimeVeiw(lv_obj_t *parent);
 void analogclock3(lv_obj_t *parent);
-
-
-void digitalClock(lv_obj_t *parent);
-void digitalClock2(lv_obj_t *parent);
-
 void devicesInformation(lv_obj_t *parent);
 void radioPingPong(lv_obj_t *parent);
+void devicesMessages(lv_obj_t *parent);
 
 void settingPMU();
 void settingSensor();
@@ -324,7 +330,6 @@ void createChargeUI()
     lv_obj_center(img_chg);
     lv_obj_align_to(label_percent, img_chg, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
 
-
     lv_task_handler();
 }
 
@@ -336,7 +341,6 @@ void destoryChargeUI()
     lv_obj_del(charge_cont);
     charge_cont = NULL;
 }
-
 
 void PMUHandler()
 {
@@ -538,24 +542,19 @@ void factory_ui()
     lv_obj_set_size(tileview, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
     lv_obj_add_event_cb(tileview, tileview_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_t *t1 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
-    lv_obj_t *t2 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
-    lv_obj_t *t2_1 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_TOP | LV_DIR_BOTTOM);
-    lv_obj_t *t2_2 = lv_tileview_add_tile(tileview, 1, 2, LV_DIR_TOP | LV_DIR_BOTTOM);
-    lv_obj_t *t2_3 = lv_tileview_add_tile(tileview, 1, 3, LV_DIR_TOP | LV_DIR_BOTTOM);
-    lv_obj_t *t3 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR | LV_DIR_BOTTOM);
-    lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
+    lv_obj_t *t7 = lv_tileview_add_tile(tileview, 0, 2, LV_DIR_TOP);
+    lv_obj_t *t2 = lv_tileview_add_tile(tileview, 0, 1, LV_DIR_RIGHT | LV_DIR_VER);
+    lv_obj_t *t3 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_BOTTOM);
+    
+    lv_obj_t *t4 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_BOTTOM);
+    lv_obj_t *t5 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_LEFT | LV_DIR_TOP);
 
-    productPinmap(t1);
-
-    analogclock(t2);
-    analogclock2(t2_1);
-    analogclock3(t2_2);
-
-    digitalClock(t2_3);
-
+    datetimeVeiw(t7);
+    analogclock3(t2);
     devicesInformation(t3);
+
     radioPingPong(t4);
+    devicesMessages(t5);
 
     uint32_t mask = watch.getDeviceProbe();
 
@@ -659,231 +658,6 @@ static void draw_part_event_cb(lv_event_t *e)
     }
 }
 
-void productPinmap(lv_obj_t *parent)
-{
-
-    struct  board_struct {
-        const char *func_name;
-        const uint8_t pin;
-    } __lilygo[] = {
-        {"TFT MOSI", BOARD_TFT_MOSI},
-        {"TFT SCK", BOARD_TFT_SCLK},
-        {"TFT CS", BOARD_TFT_CS},
-        {"TFT DC", BOARD_TFT_DC},
-        {"TFT BL", BOARD_TFT_BL},
-        {"TOUCH SDA", BOARD_TOUCH_SDA},
-        {"TOUCH SCL", BOARD_TOUCH_SCL},
-        {"TOUCH INT", BOARD_TOUCH_INT},
-        {"SENSOR SDA", BOARD_I2C_SDA},
-        {"SENSOR SCL", BOARD_I2C_SCL},
-        {"RTC INT", BOARD_RTC_INT_PIN},
-        {"PMU INT", BOARD_PMU_INT},
-        {"SENSOR INT", BOARD_BMA423_INT1},
-        {"IR Remote", BOARD_IR_PIN},
-        {"DAC BCK", BOARD_DAC_IIS_BCK},
-        {"DAC WS", BOARD_DAC_IIS_WS},
-        {"DAC DOUT", BOARD_DAC_IIS_DOUT},
-        {"RADIO SCK", BOARD_RADIO_SCK},
-        {"RADIO MISO", BOARD_RADIO_MISO},
-        {"RADIO MOSI", BOARD_RADIO_MOSI},
-        {"RADIO CS", BOARD_RADIO_SS},
-        {"RADIO DIO1", BOARD_RADIO_DI01},
-        {"RADIO RST", BOARD_RADIO_RST},
-        {"RADIO BUSY", BOARD_RADIO_BUSY},
-        {"MIC DOUT", BOARD_MIC_DATA},
-        {"MIC SCK", BOARD_MIC_CLOCK}
-    };
-
-    static lv_style_t cont_style;
-    lv_style_init(&cont_style);
-    lv_style_set_bg_opa(&cont_style, LV_OPA_100);
-    lv_style_set_bg_img_opa(&cont_style, LV_OPA_100);
-    lv_style_set_bg_color(&cont_style, lv_color_black());
-    // lv_style_set_line_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_border_width(&cont_style, 0);
-    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
-
-
-    lv_obj_t *table = lv_table_create(parent);
-    lv_obj_set_scrollbar_mode(table, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_scroll_dir(table, LV_DIR_VER);
-    lv_obj_add_style(table, &cont_style, LV_PART_SCROLLBAR);
-    lv_obj_add_style(table, &cont_style, LV_PART_ITEMS);
-    lv_obj_add_style(table, &cont_style, LV_PART_MAIN);
-
-    lv_table_set_cell_value(table, 0, 0, "Name");
-    lv_table_set_cell_value(table, 0, 1, "GPIO");
-    for (int i = 1; i < sizeof(__lilygo) / sizeof(__lilygo[0]); ++i) {
-        lv_table_set_cell_value_fmt(table, i, 0, "%s", __lilygo[i].func_name);
-        lv_table_set_cell_value_fmt(table, i, 1, "%d", __lilygo[i].pin);
-    }
-
-    lv_obj_add_event_cb(table, draw_part_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
-
-}
-
-void analogclock(lv_obj_t *parent)
-{
-    bool antialias = true;
-    lv_img_header_t header;
-
-    const void *clock_filename = &clock_face;
-    const void *hour_filename = &clock_hour_hand;
-    const void *min_filename = &clock_minute_hand;
-    const void *sec_filename = &clock_second_hand;
-
-    lv_obj_t *clock_bg =  lv_img_create(parent);
-    lv_img_set_src(clock_bg, clock_filename);
-    lv_obj_set_size(clock_bg, 240, 240);
-    lv_obj_center(clock_bg);
-
-
-    hour_img = lv_img_create(parent);
-    lv_img_decoder_get_info(hour_filename, &header);
-    lv_img_set_src(hour_img, hour_filename);
-    lv_obj_center(hour_img);
-    lv_img_set_pivot(hour_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(hour_img, antialias);
-
-    lv_img_decoder_get_info(min_filename, &header);
-    min_img = lv_img_create(parent);
-    lv_img_set_src(min_img,  min_filename);
-    lv_obj_center(min_img);
-    lv_img_set_pivot(min_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(min_img, antialias);
-
-    lv_img_decoder_get_info(sec_filename, &header);
-    sec_img = lv_img_create(parent);
-    lv_img_set_src(sec_img,  sec_filename);
-    lv_obj_center(sec_img);
-    lv_img_set_pivot(sec_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(sec_img, antialias);
-
-    static lv_style_t label_style;
-    lv_style_init(&label_style);
-    lv_style_set_text_color(&label_style, lv_color_white());
-
-    battery_percent = lv_label_create(parent);
-    lv_label_set_text(battery_percent, "100");
-    lv_obj_align(battery_percent, LV_ALIGN_LEFT_MID, 68, -10);
-    lv_obj_add_style(battery_percent, &label_style, LV_PART_MAIN);
-
-    weather_celsius = lv_label_create(parent);
-    lv_label_set_text(weather_celsius, "23°C");
-    lv_obj_align(weather_celsius, LV_ALIGN_RIGHT_MID, -62, -2);
-    lv_obj_add_style(weather_celsius, &label_style, LV_PART_MAIN);
-
-    step_counter = lv_label_create(parent);
-    lv_label_set_text(step_counter, "6688");
-    lv_obj_align(step_counter, LV_ALIGN_BOTTOM_MID, 0, -55);
-    lv_obj_add_style(step_counter, &label_style, LV_PART_MAIN);
-
-    clockTimer =   lv_timer_create([](lv_timer_t *timer) {
-
-        time_t now;
-        struct tm  timeinfo;
-        time(&now);
-        localtime_r(&now, &timeinfo);
-
-        lv_img_set_angle(
-            hour_img, ((timeinfo.tm_hour) * 300 + ((timeinfo.tm_min) * 5)) % 3600);
-        lv_img_set_angle(min_img, (timeinfo.tm_min) * 60);
-
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, sec_img);
-        lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_img_set_angle);
-        lv_anim_set_values(&a, (timeinfo.tm_sec * 60) % 3600,
-                           (timeinfo.tm_sec + 1) * 60);
-        lv_anim_set_time(&a, 1000);
-        lv_anim_start(&a);
-
-        // Update step counter
-        lv_label_set_text_fmt(step_counter, "%u", stepCounter);
-
-        // Update battery percent
-        int percent = watch.getBatteryPercent();
-        lv_label_set_text_fmt(battery_percent, "%d", percent == -1 ? 0 : percent);
-
-        // float  temp = watch.readBmaTemp();
-        // Serial.print(temp);
-        // Serial.println("*C");
-        // lv_label_set_text_fmt(weather_celsius, "%d°C", (int)temp);
-
-    },
-    1000, NULL);
-}
-
-
-lv_obj_t *watch_if_hh_img;
-lv_obj_t *watch_if_mm_img;
-lv_obj_t *watch_if_ss_img;
-
-void analogclock2(lv_obj_t *parent)
-{
-    bool antialias = true;
-    lv_img_header_t header;
-
-    const void *clock_filename = &watch_if;
-    const void *hour_filename = &watch_if_hour;
-    const void *min_filename = &watch_if_min;
-    const void *sec_filename = &watch_if_sec;
-
-
-    lv_obj_t *clock_bg =  lv_img_create(parent);
-    lv_img_set_src(clock_bg, &watch_bg);
-    lv_obj_set_size(clock_bg, 240, 240);
-    lv_obj_center(clock_bg);
-
-    lv_obj_t *clock_if =  lv_img_create(parent);
-    lv_img_set_src(clock_if, clock_filename);
-    lv_obj_set_size(clock_if, 240, 240);
-    lv_obj_center(clock_if);
-
-
-    watch_if_hh_img = lv_img_create(parent);
-    lv_img_decoder_get_info(hour_filename, &header);
-    lv_img_set_src(watch_if_hh_img, hour_filename);
-    lv_obj_center(watch_if_hh_img);
-    lv_img_set_pivot(watch_if_hh_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(watch_if_hh_img, antialias);
-
-    lv_img_decoder_get_info(min_filename, &header);
-    watch_if_mm_img = lv_img_create(parent);
-    lv_img_set_src(watch_if_mm_img,  min_filename);
-    lv_obj_center(watch_if_mm_img);
-    lv_img_set_pivot(watch_if_mm_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(watch_if_mm_img, antialias);
-
-    lv_img_decoder_get_info(sec_filename, &header);
-    watch_if_ss_img = lv_img_create(parent);
-    lv_img_set_src(watch_if_ss_img,  sec_filename);
-    lv_obj_center(watch_if_ss_img);
-    lv_img_set_pivot(watch_if_ss_img, header.w / 2, header.h / 2);
-    lv_img_set_antialias(watch_if_ss_img, antialias);
-
-    lv_timer_create([](lv_timer_t *timer) {
-
-        time_t now;
-        struct tm  timeinfo;
-        time(&now);
-        localtime_r(&now, &timeinfo);
-
-        lv_img_set_angle(watch_if_hh_img, ((timeinfo.tm_hour) * 300 + ((timeinfo.tm_min) * 5)) % 3600);
-        lv_img_set_angle(watch_if_mm_img, (timeinfo.tm_min) * 60);
-
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, watch_if_ss_img);
-        lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_img_set_angle);
-        lv_anim_set_values(&a, (timeinfo.tm_sec * 60) % 3600,
-                           (timeinfo.tm_sec + 1) * 60);
-        lv_anim_set_time(&a, 1000);
-        lv_anim_start(&a);
-    },
-    1000, NULL);
-}
-
 lv_obj_t *watch_if_hh_img3;
 lv_obj_t *watch_if_mm_img3;
 lv_obj_t *watch_if_ss_img3;
@@ -949,32 +723,6 @@ void analogclock3(lv_obj_t *parent)
 
 }
 
-void digitalClock(lv_obj_t *parent)
-{
-    const void *clock_filename = &watch_if_5;
-    lv_obj_t *clock_if =  lv_img_create(parent);
-    lv_img_set_src(clock_if, clock_filename);
-    lv_obj_set_size(clock_if, 240, 240);
-    lv_obj_center(clock_if);
-
-    label_datetime = lv_label_create(parent);
-    lv_label_set_text(label_datetime, "00:00");
-    lv_obj_set_style_text_font(label_datetime, &font_firacode_60, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label_datetime, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(label_datetime, LV_ALIGN_CENTER, 0, 50);
-
-    lv_timer_create([](lv_timer_t *timer) {
-        time_t now;
-        struct tm  timeinfo;
-        time(&now);
-        localtime_r(&now, &timeinfo);
-        static  bool rever = false;
-        lv_label_set_text_fmt(label_datetime, rever ? "%02d:%02d" : "%02d %02d", timeinfo.tm_hour, timeinfo.tm_min);
-        rever = !rever;
-    },
-    1000, NULL);
-}
-
 static void slider_event_cb(lv_event_t *e)
 {
     lv_obj_t *slider = lv_event_get_target(e);
@@ -998,44 +746,6 @@ static void light_sw_event_cb(lv_event_t *e)
 
 void devicesInformation(lv_obj_t *parent)
 {
-    lv_obj_t *label = lv_label_create(parent);
-    String text;
-    text = "Chip:";
-    text += ESP.getChipModel();
-    text += " / Rev:";
-    text += ESP.getChipRevision();
-    text += "\n";
-    text += "Flash Size:";
-    text += ESP.getFlashChipSize() / 1024 / 1024;
-    text += "MB Type:OPI\nSpeed:";
-    text += ESP.getFlashChipSpeed() / 1000 / 1000;
-    text += "MHz\n";
-    text += "Psram Size:";
-    text += (ESP.getPsramSize() / 1024);
-    text += "/";
-    text += (ESP.getFreePsram() / 1024);
-    text += "kb\n";
-    text += "IDF Version: ";
-    text += ESP.getSdkVersion();
-    text += "\n";
-    text += "Arduino Version: v";
-    text += String(ESP_ARDUINO_VERSION_MAJOR);
-    text += ".";
-    text += String(ESP_ARDUINO_VERSION_MINOR);
-    text += ".";
-    text += String(ESP_ARDUINO_VERSION_PATCH);
-    text += "\n";
-    text += "lvgl Version: v";
-    text += String(lv_version_major());
-    text += ".";
-    text += String(lv_version_minor());
-    text += ".";
-    text += String(lv_version_patch());
-    text += "\n";
-    text += "TFT_eSPI Version: v";
-    text += TFT_ESPI_VERSION;
-    text += "\n";
-
     /*Create a transition*/
     static const lv_style_prop_t props[] = {LV_STYLE_BG_COLOR, LV_STYLE_PROP_INV};
     static lv_style_transition_dsc_t transition_dsc;
@@ -1060,7 +770,8 @@ void devicesInformation(lv_obj_t *parent)
     lv_style_set_pad_all(&style_knob, 6); /*Makes the knob larger*/
     lv_style_set_transition(&style_knob, &transition_dsc);
 
-
+    lv_obj_t *label = lv_label_create(parent);
+    String text = "Yorqinlik:";
     static lv_style_t label_style;
     lv_style_init(&label_style);
     lv_style_set_text_color(&label_style, lv_color_white());
@@ -1068,7 +779,7 @@ void devicesInformation(lv_obj_t *parent)
     lv_label_set_text(label, text.c_str());
     lv_obj_set_style_text_font(label, &font_jetBrainsMono, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 80);
 
 
     /*Create a slider and add the style*/
@@ -1095,6 +806,20 @@ void devicesInformation(lv_obj_t *parent)
     // lv_obj_t *sw = lv_switch_create(parent);
     // lv_obj_align(sw, LV_ALIGN_BOTTOM_RIGHT, -20, -40);
     // lv_obj_add_event_cb(sw, light_sw_event_cb, LV_EVENT_VALUE_CHANGED, sw);
+}
+
+void devicesMessages(lv_obj_t *parent)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, "Device Messages");
+    lv_obj_set_style_text_font(label, &font_jetBrainsMono, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 10);
+
+    radio_ta = lv_textarea_create(parent);
+    lv_obj_set_size(radio_ta, 240, 100);
+    lv_textarea_set_placeholder_text(radio_ta, "Radio messages will be displayed here.");
+    lv_obj_align_to(radio_ta, label, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 }
 
 static void radio_rxtx_cb(lv_event_t *e)
@@ -1308,7 +1033,7 @@ void radioPingPong(lv_obj_t *parent)
     radio_ta = lv_textarea_create(cont);
     lv_obj_set_size(radio_ta, 210, 80);
     lv_obj_align(radio_ta, LV_ALIGN_TOP_MID, 0, 20);
-    lv_textarea_set_text(radio_ta, "Radio Test");
+    lv_textarea_set_text(radio_ta, "Radio Settings");
     lv_textarea_set_max_length(radio_ta, 256);
     lv_textarea_set_cursor_click_pos(radio_ta, false);
     lv_textarea_set_text_selection(radio_ta, false);
@@ -1404,7 +1129,6 @@ void radioPingPong(lv_obj_t *parent)
 
 }
 
-
 static void progressBarSubscriberCB(lv_event_t *e)
 {
     lv_obj_t *arc = lv_event_get_target(e);
@@ -1481,14 +1205,6 @@ void createProgressBar(lv_obj_t *parent)
 
     lv_obj_add_event_cb(arc, progressBarSubscriberCB, LV_EVENT_MSG_RECEIVED, label);
     lv_msg_subsribe_obj(LVGL_MESSAGE_PROGRESS_CHANGED_ID, arc, NULL);
-}
-
-void lv_record_event_cb(lv_event_t *e)
-{
-    Serial.println("Started Recording...");
-    recordFlag = true;
-    createProgressBar(lv_scr_act());
-    lv_disp_trig_activity(NULL);
 }
 
 void createButton(lv_obj_t *parent, const char *txt, lv_event_cb_t event_cb)
@@ -1577,6 +1293,185 @@ void settingButtonStyle()
 
 }
 
+static void lv_spinbox_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_LONG_PRESSED_REPEAT) {
+        bool *inc =  (bool *)lv_event_get_user_data(e);
+        lv_obj_t *target = lv_event_get_current_target(e);
+        lv_datetime_t *datetime_obj =  (lv_datetime_t *)lv_obj_get_user_data(target);
+        if (!datetime_obj) {
+            Serial.println("datetime_obj is null");
+            return;
+        }
+        Serial.print(datetime_obj->name);
+
+        if (*inc) {
+            lv_spinbox_increment(datetime_obj->obj);
+        } else {
+            lv_spinbox_decrement(datetime_obj->obj);
+        }
+
+    }
+}
+
+lv_obj_t *createAdjustButton(lv_obj_t *parent, const char *txt, lv_event_cb_t event_cb, void *user_data)
+{
+    static lv_style_t cont_style;
+    lv_style_init(&cont_style);
+    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
+    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
+    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
+
+    lv_obj_t *label_cont = lv_obj_create(parent);
+    lv_obj_set_size(label_cont, 210, 90);
+    lv_obj_set_scrollbar_mode(label_cont, LV_SCROLLBAR_MODE_OFF);
+    // lv_obj_set_flex_flow(label_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(label_cont, LV_DIR_NONE);
+    lv_obj_set_style_pad_top(label_cont, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(label_cont, 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(label_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(label_cont, 5, LV_PART_MAIN);
+    lv_obj_set_style_border_color(label_cont, DEFAULT_COLOR, LV_PART_MAIN);
+
+    lv_obj_t *label = lv_label_create(label_cont);
+    lv_label_set_text(label, txt);
+    lv_obj_set_style_text_font(label, &font_siegra, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 5, 0);
+
+
+    lv_obj_t *cont = lv_obj_create(label_cont);
+    lv_obj_set_size(cont, 185, 45);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(cont, LV_DIR_NONE);
+    lv_obj_align_to(cont, label, LV_ALIGN_OUT_BOTTOM_LEFT, -6, 5);
+
+    lv_obj_set_style_pad_all(cont, 1, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(cont, 0, LV_PART_MAIN);
+
+    lv_coord_t w = 50;
+    lv_coord_t h = 40;
+    lv_obj_t *btn = lv_btn_create(cont);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_MINUS, 0);
+    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
+    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
+ 
+    static bool increment = 1;
+    static bool decrement = 0;
+    lv_obj_set_user_data(btn, user_data);
+    lv_obj_add_event_cb(btn, event_cb, LV_EVENT_ALL, &decrement);
+
+    lv_obj_t *spinbox = lv_spinbox_create(cont);
+    lv_spinbox_set_step(spinbox, 1);
+    lv_spinbox_set_rollover(spinbox, false);
+    lv_spinbox_set_cursor_pos(spinbox, 0);
+
+    if (user_data) {
+        lv_datetime_t *datetime_obj = (lv_datetime_t *)user_data;
+        lv_spinbox_set_digit_format(spinbox, datetime_obj->digitFormat, 0);
+        lv_spinbox_set_range(spinbox, datetime_obj->minVal, datetime_obj->maxVal);
+        lv_spinbox_set_value(spinbox, datetime_obj->defaultVal);
+    }
+    lv_obj_set_width(spinbox, 65);
+    lv_obj_set_height(spinbox, h + 2);
+
+    lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_text_color(spinbox, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_border_color(spinbox, DEFAULT_COLOR, LV_PART_MAIN);
+    lv_obj_set_style_text_font(spinbox, &font_sandbox, LV_PART_MAIN);
+
+    // lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_SELECTED);
+    // lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(spinbox, LV_OPA_TRANSP, LV_PART_CURSOR);
+
+
+    btn = lv_btn_create(cont);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_PLUS, 0);
+    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
+    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
+    lv_obj_set_user_data(btn, user_data);
+    // lv_obj_add_event_cb(btn, lv_spinbox_decrement_event_cb, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(btn, event_cb, LV_EVENT_ALL, &increment);
+
+    return spinbox;
+}
+
+static void datetime_event_handler(lv_event_t *e)
+{
+    Serial.println("Save setting datetime.");
+    int32_t year =  lv_spinbox_get_value(lv_datetime[0].obj);
+    int32_t month =  lv_spinbox_get_value(lv_datetime[1].obj);
+    int32_t day =  lv_spinbox_get_value(lv_datetime[2].obj);
+    int32_t hour =  lv_spinbox_get_value(lv_datetime[3].obj);
+    int32_t minute =  lv_spinbox_get_value(lv_datetime[4].obj);
+    int32_t second =  lv_spinbox_get_value(lv_datetime[5].obj);
+
+    Serial.printf("Y=%dM=%dD=%d H:%dM:%dS:%d\n", year, month, day,
+                  hour, minute, second);
+
+    watch.setDateTime(year, month, day, hour, minute, second);
+
+    // Reading time synchronization from RTC to system time
+    watch.hwClockRead();
+}
+
+void datetimeVeiw(lv_obj_t *parent)
+{
+    //set default datetime
+    time_t now;
+    struct tm  info;
+    time(&now);
+    localtime_r(&now, &info);
+    lv_datetime[0].defaultVal = info.tm_year + 1900;
+    lv_datetime[1].defaultVal = info.tm_mon + 1;
+    lv_datetime[2].defaultVal = info.tm_mday;
+    lv_datetime[3].defaultVal = info.tm_hour;
+    lv_datetime[4].defaultVal = info.tm_min ;
+    lv_datetime[5].defaultVal = info.tm_sec ;
+
+
+    static lv_style_t cont_style;
+    lv_style_init(&cont_style);
+    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
+    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
+    lv_style_set_line_opa(&cont_style, LV_OPA_TRANSP);
+    lv_style_set_border_width(&cont_style, 0);
+    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
+
+    lv_obj_t *cont = lv_obj_create(parent);
+    lv_obj_set_size(cont, lv_disp_get_hor_res(NULL), 400);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
+    lv_obj_add_style(cont, &cont_style, LV_PART_MAIN);
+
+    for (int i = 0; i < sizeof(lv_datetime) / sizeof(lv_datetime[0]); ++i) {
+        lv_datetime[i].obj =  createAdjustButton(cont, lv_datetime[i].name, lv_spinbox_event_cb, &(lv_datetime[i]));
+    }
+
+    lv_obj_t *btn_cont = lv_obj_create(cont);
+    lv_obj_set_size(btn_cont, 210, 60);
+    lv_obj_set_scrollbar_mode(btn_cont, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scroll_dir(btn_cont, LV_DIR_NONE);
+    lv_obj_set_style_pad_top(btn_cont, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(btn_cont, 5, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(btn_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    lv_obj_t *btn = lv_btn_create(btn_cont);
+    lv_obj_set_style_bg_img_src(btn, LV_SYMBOL_SAVE, 0);
+    lv_obj_set_size(btn, 180, 50);
+    lv_obj_add_style(btn, &button_default_style, LV_PART_MAIN);
+    lv_obj_add_style(btn, &button_press_style, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn, datetime_event_handler, LV_EVENT_CLICKED, NULL);
+}
+
+
 /*
  ************************************
  *      HARDWARE SETTING            *
@@ -1648,7 +1543,6 @@ void setRadioFlag(void)
 
 void settingRadio()
 {
-#ifdef USING_TWATCH_S3
     Serial.print(F("[Radio] Initializing ... "));
     int state = radio.begin();
     if (state == RADIOLIB_ERR_NONE) {
@@ -1706,13 +1600,8 @@ void settingRadio()
     }
 #endif
 
-
-
     // set output power
     if (radio.setOutputPower(RADIO_DEFAULT_POWER_LEVEL) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
         Serial.println(F("Selected output power is invalid for this module!"));
     }
-
-#endif
-
 }
