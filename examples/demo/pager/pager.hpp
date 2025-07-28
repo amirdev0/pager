@@ -74,6 +74,7 @@ void factory_ui();
 void radioTask(lv_timer_t *parent);
 static void draw_part_event_cb(lv_event_t *e);
 
+void devicesMessages_add(const String& msg);
 void analogclock3(lv_obj_t *parent);
 static void slider_event_cb(lv_event_t *e);
 static void light_sw_event_cb(lv_event_t *e);

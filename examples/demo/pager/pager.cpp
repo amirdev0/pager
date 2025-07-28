@@ -125,7 +125,7 @@ const float radio_power_args_list[] = {2, 5, 10, 12, 17, 20, 22};
 #define RADIO_DEFAULT_CUR_LIMIT     140
 #define RADIO_DEFAULT_POWER_LEVEL   17
 
-#define RADIO_FREQ_DROP_INDEX       2
+#define RADIO_FREQ_DROP_INDEX       0
 #define RADIO_BW_DROP_INDEX         0
 #define RADIO_TX_POWER_DROP_INDEX   6
 
@@ -292,7 +292,6 @@ void radioTask(lv_timer_t *parent)
             }
 
             lv_snprintf(buf, 256, "%.2fMHZ [%u]:Tx %s", radio_setting.freq, lv_tick_get() / 1000, transmissionState == RADIOLIB_ERR_NONE ? "Successed" : "Failed");
-            lv_textarea_set_text(radio_ta, buf);
 
             transmissionState = radio.startTransmit("Hello World!");
 
@@ -302,6 +301,7 @@ void radioTask(lv_timer_t *parent)
             // print data and send another packet
             String str;
             int state = radio.readData(str);
+
 
             if (state == RADIOLIB_ERR_NONE) {
                 // packet was successfully received
@@ -323,9 +323,11 @@ void radioTask(lv_timer_t *parent)
                 Serial.print(radio.getSNR());
                 Serial.println(F(" dB"));
 
+                // Add message to devicesMessages stack
+                String msg = String("RX: ") + str + String(" (RSSI:") + String(radio.getRSSI(), 1) + ")";
+                devicesMessages_add(msg);
 
                 lv_snprintf(buf, 256, "%.2fMHZ [%u]:Rx %s \nRSSI:%.2f", radio_setting.freq, lv_tick_get() / 1000, str.c_str(), radio.getRSSI());
-                lv_textarea_set_text(radio_ta, buf);
             }
 
             radio.startReceive();
@@ -655,6 +657,12 @@ void devicesInformation(lv_obj_t *parent)
 }
 
 
+// Message tile stack for devicesMessages
+#define DEVICES_MESSAGES_MAX 5
+static lv_obj_t *devices_messages_cont = NULL;
+static lv_obj_t *devices_message_tiles[DEVICES_MESSAGES_MAX] = {NULL};
+static int devices_messages_count = 0;
+
 void devicesMessages(lv_obj_t *parent)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -663,12 +671,85 @@ void devicesMessages(lv_obj_t *parent)
     lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 10);
 
-    radio_ta = lv_textarea_create(parent);
-    lv_obj_set_size(radio_ta, 232, 100);
-    lv_textarea_set_placeholder_text(radio_ta, "Barcha xabarlar shu joyda paydo bo'ladi.");
-    lv_textarea_set_cursor_click_pos(radio_ta, false);
-    lv_textarea_set_text_selection(radio_ta, false);
-    lv_obj_align_to(radio_ta, label, LV_ALIGN_OUT_BOTTOM_MID, 4, 10);
+    // Create a vertical container for message tiles
+    devices_messages_cont = lv_obj_create(parent);
+    lv_obj_set_size(devices_messages_cont, 232, 180);
+    lv_obj_set_flex_flow(devices_messages_cont, LV_FLEX_FLOW_COLUMN_REVERSE); // Newest at bottom
+    lv_obj_set_scroll_dir(devices_messages_cont, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(devices_messages_cont, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_align_to(devices_messages_cont, label, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+    lv_obj_set_style_bg_opa(devices_messages_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(devices_messages_cont, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(devices_messages_cont, 0, LV_PART_MAIN);
+
+    // Show initial stack if any
+    for (int i = 0; i < devices_messages_count; ++i) {
+        if (devices_message_tiles[i]) {
+            lv_obj_del(devices_message_tiles[i]);
+            devices_message_tiles[i] = NULL;
+        }
+    }
+    devices_messages_count = 0;
+}
+
+// Helper to format date/time string
+static String devicesMessages_get_datetime_str() {
+    time_t now = time(NULL);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    return String(buf);
+}
+
+// Call this to add a message tile to the stack and update the UI
+void devicesMessages_add(const String& msg)
+{
+    // Vibrate on every message receive
+    watch.setWaveform(0, 80); 
+    watch.run();
+    if (!devices_messages_cont) return;
+
+    // If full, remove the oldest (topmost) tile
+    if (devices_messages_count == DEVICES_MESSAGES_MAX) {
+        lv_obj_t *oldest = devices_message_tiles[0];
+        if (oldest) lv_obj_del(oldest);
+        for (int i = 1; i < DEVICES_MESSAGES_MAX; ++i) {
+            devices_message_tiles[i-1] = devices_message_tiles[i];
+        }
+        devices_messages_count--;
+    }
+
+    // Create a container for the message tile
+    lv_obj_t *tile = lv_obj_create(devices_messages_cont);
+    lv_obj_set_width(tile, lv_pct(100));
+    lv_obj_set_height(tile, LV_SIZE_CONTENT); // Let height grow with content
+    lv_obj_set_style_bg_color(tile, lv_palette_lighten(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_radius(tile, 8, LV_PART_MAIN);
+    lv_obj_set_style_border_width(tile, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(tile, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(devices_messages_cont, 12, LV_PART_MAIN);
+
+    // Date/time label
+    lv_obj_t *dt_label = lv_label_create(tile);
+    String dt = devicesMessages_get_datetime_str();
+    lv_label_set_text(dt_label, dt.c_str());
+    lv_obj_set_style_text_color(dt_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+    lv_obj_align(dt_label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    // Message label
+    lv_obj_t *msg_label = lv_label_create(tile);
+    lv_label_set_text(msg_label, msg.c_str());
+    lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(msg_label, lv_pct(100));
+    lv_obj_set_style_text_color(msg_label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_align(msg_label, LV_ALIGN_TOP_LEFT, 0, 22);
+
+    // Save tile in stack
+    devices_message_tiles[devices_messages_count++] = tile;
+
+    // Scroll to bottom (newest)
+    lv_obj_scroll_to_y(devices_messages_cont, 0, LV_ANIM_ON);
 }
 
 static void radio_rxtx_cb(lv_event_t *e)
