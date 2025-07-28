@@ -31,7 +31,7 @@
 #endif
 
 #ifndef USING_TWATCH_S3
-#define USING_TWATCH_S3
+  #define USING_TWATCH_S3
 #endif
 
 
@@ -58,7 +58,7 @@
 
 
 #ifndef GPSSerial
-#define GPSSerial   Serial1
+  #define GPSSerial   Serial1
 #endif
 
 #include "utilities.h"
@@ -70,7 +70,7 @@
     BOARD_TFT_DC    != TFT_DC   || \
     TFT_WIDTH       != BOARD_TFT_WIDTH || \
     TFT_HEIGHT      != BOARD_TFT_HEIHT
-#error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
+  #error  "Error! Please make sure <Setup212_LilyGo_T_Watch_S3.h> is selected in <TFT_eSPI/User_Setup_Select.h>"
 #endif
 
 #define WATCH_RADIO_ONLINE          _BV(0)
@@ -190,6 +190,6 @@ private:
 extern LilyGoLib watch;
 
 #if SENSORLIB_VERSION_MINOR > 2
-#define configreFeatureInterrupt configFeatureInterrupt
+  #define configreFeatureInterrupt configFeatureInterrupt
 #endif
 
