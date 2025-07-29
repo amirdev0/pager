@@ -153,6 +153,11 @@ void PMUHandler()
         if (watch.isBatChargeStartIrq()) {
             Serial.println("isBatChagerStart");
         }
+        // Handle crown (power key) press events
+        if (watch.isPekeyShortPressIrq() || watch.isPekeyLongPressIrq()) {
+            Serial.println("Crown (power key) pressed, shutting down screen.");
+            lowPowerEnergyHandler();
+        }
         // Clear watch Interrupt Status Register
         watch.clearPMU();
     }
@@ -1413,15 +1418,17 @@ void factory_ui()
     lv_obj_set_size(tileview, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
     lv_obj_add_event_cb(tileview, tileview_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_t *t7 = lv_tileview_add_tile(tileview, 0, 2, LV_DIR_TOP);
-    lv_obj_t *t2 = lv_tileview_add_tile(tileview, 0, 1, LV_DIR_RIGHT | LV_DIR_VER);
-    lv_obj_t *t3 = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_BOTTOM);
+    lv_obj_t *t7 = lv_tileview_add_tile(tileview, 0, 1, LV_DIR_RIGHT);
+    lv_obj_t *t2 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_HOR | LV_DIR_TOP);
+
+    lv_obj_t *t3 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_BOTTOM);
     
-    lv_obj_t *t4 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_BOTTOM);
-    lv_obj_t *t5 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_LEFT | LV_DIR_TOP);
+    lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 1, LV_DIR_LEFT);
+    lv_obj_t *t5 = lv_tileview_add_tile(tileview, 2, 1, LV_DIR_HOR);
 
     datetimeVeiw(t7);
     analogclock3(t2);
+
     devicesInformation(t3);
 
     radioPingPong(t4);
