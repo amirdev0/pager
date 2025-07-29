@@ -69,6 +69,7 @@ void destoryChargeUI();
 void PMUHandler();
 void SensorHandler();
 void lowPowerEnergyHandler();
+void lowPowerEnergyHandler2();
 void tileview_change_cb(lv_event_t *e);
 void factory_ui();
 void radioTask(lv_timer_t *parent);

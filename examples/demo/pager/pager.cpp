@@ -1,4 +1,9 @@
 #include "pager.hpp"
+#include "proto.hpp"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+TaskHandle_t radioTaskHandle = NULL;
 
 static lv_obj_t *hour_img;
 static lv_obj_t *min_img;
@@ -93,6 +98,7 @@ typedef struct  {
 static radio_params radio_setting;
 
 const char *radio_freq_list =
+    "411MHz\n"
     "433MHz\n"
     "470MHz\n"
     "850MHZ\n"
@@ -100,7 +106,7 @@ const char *radio_freq_list =
     "915MHz\n"
     "920MHZ\n"
     "923MHz";
-const float radio_freq_args_list[] = {433.0, 470.0, 850.0, 868.0, 915.0, 920.0, 923.0};
+const float radio_freq_args_list[] = {411.0, 433.0, 470.0, 850.0, 868.0, 915.0, 920.0, 923.0};
 
 const char *radio_bandwidth_list =
     "125KHz\n"
@@ -118,10 +124,10 @@ const char *radio_power_level_list =
     "22dBm";
 const float radio_power_args_list[] = {2, 5, 10, 12, 17, 20, 22};
 
-#define RADIO_DEFAULT_FREQ          433.0
+#define RADIO_DEFAULT_FREQ          411.0
 #define RADIO_DEFAULT_BW            125.0
-#define RADIO_DEFAULT_SF            10
-#define RADIO_DEFAULT_CR            6
+#define RADIO_DEFAULT_SF            12
+#define RADIO_DEFAULT_CR            5
 #define RADIO_DEFAULT_CUR_LIMIT     140
 #define RADIO_DEFAULT_POWER_LEVEL   17
 
@@ -154,9 +160,13 @@ void PMUHandler()
             Serial.println("isBatChagerStart");
         }
         // Handle crown (power key) press events
-        if (watch.isPekeyShortPressIrq() || watch.isPekeyLongPressIrq()) {
-            Serial.println("Crown (power key) pressed, shutting down screen.");
+        if (watch.isPekeyLongPressIrq()) {
+            Serial.println("Crown long (power key) pressed, shutting down screen.");
             lowPowerEnergyHandler();
+        }
+        if (watch.isPekeyShortPressIrq()) {
+            Serial.println("Crown short (power key) pressed, shutting down screen.");
+            lowPowerEnergyHandler2();
         }
         // Clear watch Interrupt Status Register
         watch.clearPMU();
@@ -208,7 +218,7 @@ void lowPowerEnergyHandler()
 
     sportsIrq = false;
     pmuIrq = false;
-    lv_timer_pause(transmitTask);
+    //lv_timer_pause(transmitTask);
 
     radio.sleep();
 
@@ -258,7 +268,69 @@ void lowPowerEnergyHandler()
         true);
 
 
-    lv_timer_resume(transmitTask);
+    //lv_timer_resume(transmitTask);
+
+    lv_disp_trig_activity(NULL);
+    // Run once
+    lv_task_handler();
+
+    watch.incrementalBrightness(brightnessLevel);
+}
+
+void lowPowerEnergyHandler2()
+{
+    Serial.println("Enter light sleep mode!");
+    brightnessLevel = watch.getBrightness();
+    watch.decrementBrightness(0);
+
+    watch.clearPMU();
+
+    watch.configreFeatureInterrupt(
+        SensorBMA423::INT_STEP_CNTR |   // Pedometer interrupt
+        SensorBMA423::INT_ACTIVITY |    // Activity interruption
+        SensorBMA423::INT_TILT |        // Tilt interrupt
+        SensorBMA423::INT_WAKEUP |      // DoubleTap interrupt
+        SensorBMA423::INT_ANY_NO_MOTION,// Any  motion / no motion interrupt
+        false);
+
+    sportsIrq = false;
+    pmuIrq = false;
+    //lv_timer_pause(transmitTask);
+
+    //radio.sleep();
+
+    // Enter display sleepmode
+    watch.writecommand(0x10);
+
+
+
+        // Too low a frequency may cause a restart
+        // setCpuFrequencyMhz(10);
+        setCpuFrequencyMhz(80);
+        while (!pmuIrq && !sportsIrq && !watch.getTouched()) {
+            delay(300);
+        }
+
+        setCpuFrequencyMhz(240);
+
+
+    // Wakeup display
+    watch.writecommand(0x11);
+
+    // Clear Interrupts in Loop
+    // watch.readBMA();
+    watch.clearPMU();
+
+    watch.configreFeatureInterrupt(
+        SensorBMA423::INT_STEP_CNTR |   // Pedometer interrupt
+        SensorBMA423::INT_ACTIVITY |    // Activity interruption
+        SensorBMA423::INT_TILT |        // Tilt interrupt
+        // SensorBMA423::INT_WAKEUP |      // DoubleTap interrupt
+        SensorBMA423::INT_ANY_NO_MOTION,// Any  motion / no motion interrupt
+        true);
+
+
+    //lv_timer_resume(transmitTask);
 
     lv_disp_trig_activity(NULL);
     // Run once
@@ -273,8 +345,12 @@ void lowPowerEnergyHandler()
  ************************************
 */
 
-void radioTask(lv_timer_t *parent)
+void radioTask(void * pvParameters)
 {
+    const TickType_t xDelay = pdMS_TO_TICKS(200); // Delay for 500ms
+    for (;;) {
+        // Perform some action
+
     char buf[256];
     // check if the previous operation finished
     if (radioTransmitFlag) {
@@ -328,15 +404,27 @@ void radioTask(lv_timer_t *parent)
                 Serial.print(radio.getSNR());
                 Serial.println(F(" dB"));
 
-                // Add message to devicesMessages stack
-                String msg = String("RX: ") + str + String(" (RSSI:") + String(radio.getRSSI(), 1) + ")";
-                devicesMessages_add(msg);
+                // print decrypted data of the packet
+                //String msg = xorEncryptDecrypt(str, "[{#~]^}|&");
+                //uint8_t len = msg.length() <= 256 ? msg.length() : 256;
+                //msg = msg.substring(0, len);
+                
+                String msg = str;
 
-                lv_snprintf(buf, 256, "%.2fMHZ [%u]:Rx %s \nRSSI:%.2f", radio_setting.freq, lv_tick_get() / 1000, str.c_str(), radio.getRSSI());
+                // Add message to devicesMessages stack
+                if (printMessage(msg)) {
+                    // Vibrate on every message receive
+                    watch.setWaveform(0, 80); 
+                    watch.run();
+                    devicesMessages_add(msg);
+                    //lv_snprintf(buf, 256, "%.2fMHZ [%u]:Rx %s \nRSSI:%.2f", radio_setting.freq, lv_tick_get() / 1000, str.c_str(), radio.getRSSI());
+                }
             }
 
             radio.startReceive();
         }
+    }
+            vTaskDelay(xDelay); // Suspend the task
     }
 }
 
@@ -474,20 +562,9 @@ void tileview_change_cb(lv_event_t *e)
     Serial.print(" pageId:");
     Serial.println(pageId);
 
-    switch (pageId) {
-    case RADIO_TRANSMIT_PAGE_ID:
-        lv_timer_resume(transmitTask);
+    canScreenOff = true;
+    if (pageId == RADIO_TRANSMIT_PAGE_ID)
         canScreenOff = false;
-        break;
-    default:
-        if (!transmitTask->paused) {
-            lv_timer_pause(transmitTask);
-            Serial.println("lv_timer_pause transmitTask");
-        }
-
-        canScreenOff = true;
-        break;
-    }
     lastPageID = pageId;
 }
 
@@ -710,9 +787,6 @@ static String devicesMessages_get_datetime_str() {
 // Call this to add a message tile to the stack and update the UI
 void devicesMessages_add(const String& msg)
 {
-    // Vibrate on every message receive
-    watch.setWaveform(0, 80); 
-    watch.run();
     if (!devices_messages_cont) return;
 
     // If full, remove the oldest (topmost) tile
@@ -766,7 +840,7 @@ static void radio_rxtx_cb(lv_event_t *e)
     Serial.printf("Option: %s id:%u\n", buf, id);
     switch (id) {
     case 0:
-        lv_timer_resume(transmitTask);
+        //lv_timer_resume(transmitTask);
         radioTransmitFlag = false;
 
         // TX
@@ -777,7 +851,7 @@ static void radio_rxtx_cb(lv_event_t *e)
 
         break;
     case 1:
-        lv_timer_resume(transmitTask);
+        //lv_timer_resume(transmitTask);
         radioTransmitFlag = false;
 
         // RX
@@ -792,12 +866,12 @@ static void radio_rxtx_cb(lv_event_t *e)
 
         break;
     case 2:
-        if (!transmitTask->paused) {
-            lv_textarea_set_text(radio_ta, "Radio has disable.");
-            lv_timer_pause(transmitTask);
+        //if (!transmitTask->paused) {
+            //lv_textarea_set_text(radio_ta, "Radio has disable.");
+            //lv_timer_pause(transmitTask);
             radio.standby();
             // watch.sleep();
-        }
+        //}
         break;
     default:
         break;
@@ -818,11 +892,11 @@ static void radio_bandwidth_cb(lv_event_t *e)
         return;
     }
 
-    bool isRunning = !transmitTask->paused;
-    if (isRunning) {
-        lv_timer_pause(transmitTask);
-        radio.standby();
-    }
+    //bool isRunning = !transmitTask->paused;
+    //if (isRunning) {
+        //lv_timer_pause(transmitTask);
+        //radio.standby();
+    //}
 
     // set bandwidth
 
@@ -839,9 +913,9 @@ static void radio_bandwidth_cb(lv_event_t *e)
         radio.startReceive();
     }
 
-    if (isRunning) {
-        lv_timer_resume(transmitTask);
-    }
+    //if (isRunning) {
+        //lv_timer_resume(transmitTask);
+    //}
 }
 
 static void radio_freq_cb(lv_event_t *e)
@@ -858,10 +932,10 @@ static void radio_freq_cb(lv_event_t *e)
         return;
     }
 
-    bool isRunning = !transmitTask->paused;
-    if (isRunning) {
-        lv_timer_pause(transmitTask);
-    }
+    //bool isRunning = !transmitTask->paused;
+    //if (isRunning) {
+        //lv_timer_pause(transmitTask);
+    //}
 
     if (radio.setFrequency(radio_freq_args_list[id]) == RADIOLIB_ERR_INVALID_FREQUENCY) {
         Serial.println(F("Selected frequency is invalid for this module!"));
@@ -875,9 +949,9 @@ static void radio_freq_cb(lv_event_t *e)
         radio.startReceive();
     }
 
-    if (isRunning) {
-        lv_timer_resume(transmitTask);
-    }
+    //if (isRunning) {
+        //lv_timer_resume(transmitTask);
+    //}
 
 }
 
@@ -890,11 +964,11 @@ static void radio_power_cb(lv_event_t *e)
     Serial.printf("Option: %s id:%u\n", buf, id);
 
 
-    bool isRunning = !transmitTask->paused;
-    if (isRunning) {
-        lv_timer_pause(transmitTask);
-        radio.standby();
-    }
+    //bool isRunning = !transmitTask->paused;
+    //if (isRunning) {
+        //lv_timer_pause(transmitTask);
+        //radio.standby();
+    //}
     /*
     * SX1262 Power level   2 ~ 22dBm
     * * * * */
@@ -914,9 +988,9 @@ static void radio_power_cb(lv_event_t *e)
         radio.startReceive();
     }
 
-    if (isRunning) {
-        lv_timer_resume(transmitTask);
-    }
+    //if (isRunning) {
+        //lv_timer_resume(transmitTask);
+    //}
 }
 
 static void radio_tx_interval_cb(lv_event_t *e)
@@ -935,7 +1009,7 @@ static void radio_tx_interval_cb(lv_event_t *e)
     }
     // Save the configured transmission interval
     configTransmitInterval = interval[id];
-    lv_timer_set_period(transmitTask, interval[id]);
+    //lv_timer_set_period(transmitTask, interval[id]);
 }
 
 void radioPingPong(lv_obj_t *parent)
@@ -1436,7 +1510,19 @@ void factory_ui()
 
     uint32_t mask = watch.getDeviceProbe();
 
-    transmitTask =  lv_timer_create(radioTask, 200, NULL);
+    //transmitTask = lv_timer_create(radioTask, 200, NULL);
+
+    // Create FreeRTOS task for radio polling (runs independently of LVGL timers)
+    if (radioTaskHandle == NULL) {
+        xTaskCreate(
+            radioTask,   // Task function
+            "RadioTask",         // Name
+            4096,                 // Stack size
+            NULL,                 // Parameter
+            1,                    // Priority
+            &radioTaskHandle      // Task handle
+        );
+    }
 
     lv_disp_trig_activity(NULL);
 
@@ -1541,7 +1627,7 @@ void settingRadio()
     }
 
     // set LoRa sync word to 0xAB
-    if (radio.setSyncWord(0xAB) != RADIOLIB_ERR_NONE) {
+    if (radio.setSyncWord(0x12) != RADIOLIB_ERR_NONE) {
         Serial.println(F("Unable to set sync word!"));
     }
 
