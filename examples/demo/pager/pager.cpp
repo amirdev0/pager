@@ -2,6 +2,7 @@
 #include "proto.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <queue>
 
 TaskHandle_t radioTaskHandle = NULL;
 
@@ -21,6 +22,9 @@ static lv_style_t button_press_style;
 
 // Save the ID of the current page
 uint8_t pageId = 0;
+
+// Variable to indicate how many new messages are received
+uint8_t new_messages = 0;
 
 /*
 * USB cannot be used in light sleep mode.
@@ -160,10 +164,10 @@ void PMUHandler()
             Serial.println("isBatChagerStart");
         }
         // Handle crown (power key) press events
-        if (watch.isPekeyLongPressIrq()) {
-            Serial.println("Crown long (power key) pressed, shutting down screen.");
-            lowPowerEnergyHandler();
-        }
+        //if (watch.isPekeyLongPressIrq()) {
+            //Serial.println("Crown long (power key) pressed, shutting down screen.");
+            //lowPowerEnergyHandler();
+        //}
         if (watch.isPekeyShortPressIrq()) {
             Serial.println("Crown short (power key) pressed, shutting down screen.");
             lowPowerEnergyHandler2();
@@ -218,7 +222,7 @@ void lowPowerEnergyHandler()
 
     sportsIrq = false;
     pmuIrq = false;
-    //lv_timer_pause(transmitTask);
+    lv_timer_pause(transmitTask);
 
     radio.sleep();
 
@@ -268,7 +272,7 @@ void lowPowerEnergyHandler()
         true);
 
 
-    //lv_timer_resume(transmitTask);
+    lv_timer_resume(transmitTask);
 
     lv_disp_trig_activity(NULL);
     // Run once
@@ -295,7 +299,7 @@ void lowPowerEnergyHandler2()
 
     sportsIrq = false;
     pmuIrq = false;
-    //lv_timer_pause(transmitTask);
+    lv_timer_pause(transmitTask);
 
     //radio.sleep();
 
@@ -330,7 +334,7 @@ void lowPowerEnergyHandler2()
         true);
 
 
-    //lv_timer_resume(transmitTask);
+    lv_timer_resume(transmitTask);
 
     lv_disp_trig_activity(NULL);
     // Run once
@@ -344,39 +348,38 @@ void lowPowerEnergyHandler2()
  *            UI SETTING            *
  ************************************
 */
-
+std::queue<String> msg_buf; // Buffer to hold received messages
 void radioTask(void * pvParameters)
 {
-    const TickType_t xDelay = pdMS_TO_TICKS(200); // Delay for 500ms
+    const TickType_t xDelay = pdMS_TO_TICKS(500); // Delay for 500ms
     for (;;) {
         // Perform some action
-
     char buf[256];
     // check if the previous operation finished
-    if (radioTransmitFlag) {
+    if (!transmitFlag && radioTransmitFlag) {
         // reset flag
         radioTransmitFlag = false;
 
-        if (transmitFlag) {
+        //if (transmitFlag) {
             //TX
             // the previous operation was transmission, listen for response
             // print the result
-            if (transmissionState == RADIOLIB_ERR_NONE) {
+            //if (transmissionState == RADIOLIB_ERR_NONE) {
                 // packet was successfully sent
 
-                Serial.printf("FREQ:%.2f BW:%.2f PW:%.2f\n", radio_setting.freq, radio_setting.bw, radio_setting.pw);
+                //Serial.printf("FREQ:%.2f BW:%.2f PW:%.2f\n", radio_setting.freq, radio_setting.bw, radio_setting.pw);
 
-                Serial.println(F("transmission finished!"));
-            } else {
-                Serial.print(F("failed, code "));
-                Serial.println(transmissionState);
-            }
+                //Serial.println(F("transmission finished!"));
+            //} else {
+                //Serial.print(F("failed, code "));
+                //Serial.println(transmissionState);
+            //}
 
-            lv_snprintf(buf, 256, "%.2fMHZ [%u]:Tx %s", radio_setting.freq, lv_tick_get() / 1000, transmissionState == RADIOLIB_ERR_NONE ? "Successed" : "Failed");
+            //lv_snprintf(buf, 256, "%.2fMHZ [%u]:Tx %s", radio_setting.freq, lv_tick_get() / 1000, transmissionState == RADIOLIB_ERR_NONE ? "Successed" : "Failed");
 
-            transmissionState = radio.startTransmit("Hello World!");
+            //transmissionState = radio.startTransmit("Hello World!");
 
-        } else {
+        //} else {
             // RX
             // the previous operation was reception
             // print data and send another packet
@@ -409,17 +412,21 @@ void radioTask(void * pvParameters)
                 //uint8_t len = msg.length() <= 256 ? msg.length() : 256;
                 //msg = msg.substring(0, len);
                 
-                String msg = str;
-
-                // Add message to devicesMessages stack
-                if (printMessage(msg)) {
-                    // Vibrate on every message receive
+                if (checkMessage(str)) {
                     watch.setWaveform(0, 80); 
                     watch.run();
-                    devicesMessages_add(msg);
-                    //lv_snprintf(buf, 256, "%.2fMHZ [%u]:Rx %s \nRSSI:%.2f", radio_setting.freq, lv_tick_get() / 1000, str.c_str(), radio.getRSSI());
-                }
-            }
+
+                    if (msg_buf.size() > 5)
+                        msg_buf.pop();
+                    msg_buf.push(str);
+                    
+                    if (watch.writelog(str.c_str()) == 0) {
+                        Serial.println("Log written successfully.");
+                    } else {
+                        Serial.println("Failed to write log.");
+                    }
+                }                
+            //}
 
             radio.startReceive();
         }
@@ -674,8 +681,83 @@ static void slider_event_cb(lv_event_t *e)
     watch.setBrightness(level);
 }
 
+// Timer callback to update battery percentage label
+static void update_battery_label_cb(lv_timer_t *timer) {
+    lv_obj_t *batt_label = (lv_obj_t *)timer->user_data;
+    if (!batt_label) return;
+    int battery_percent = watch.getBatteryPercent();
+    char batt_buf[16];
+    snprintf(batt_buf, sizeof(batt_buf), "%d%%", battery_percent);
+    lv_label_set_text(batt_label, batt_buf);
+}
+
 void devicesInformation(lv_obj_t *parent)
 {
+    // Info row with icons and values, spaced left and right
+    lv_obj_t *info_row = lv_obj_create(parent);
+    lv_obj_set_size(info_row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(info_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(info_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_SPACE_BETWEEN);
+    lv_obj_set_style_bg_opa(info_row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(info_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(info_row, 0, LV_PART_MAIN);
+    lv_obj_align(info_row, LV_ALIGN_TOP_MID, 0, 0);
+
+    // Left: Temperature icon + value
+    lv_obj_t *temp_cont = lv_obj_create(info_row);
+    lv_obj_set_size(temp_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(temp_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(temp_cont, 0, LV_PART_MAIN);
+    lv_obj_set_flex_flow(temp_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(temp_cont, 0, LV_PART_MAIN);
+
+    lv_obj_t *temp_img = lv_img_create(temp_cont);
+    lv_img_set_src(temp_img, &img_temp);
+    lv_obj_align(temp_img, LV_ALIGN_LEFT_MID, 0, 0);
+
+    float chip_temp = watch.readCoreTemp();
+    char temp_buf[16];
+    snprintf(temp_buf, sizeof(temp_buf), "%.1f°C", chip_temp);
+    lv_obj_t *temp_label = lv_label_create(temp_cont);
+    lv_label_set_text(temp_label, temp_buf);
+    lv_obj_set_style_text_color(temp_label, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_MAIN);
+    lv_obj_set_style_text_font(temp_label, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_align(temp_label, LV_ALIGN_LEFT_MID, 2, 0);
+
+    // Right: Battery icon + value
+    lv_obj_t *batt_cont = lv_obj_create(info_row);
+    lv_obj_set_size(batt_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(batt_cont, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(batt_cont, 0, LV_PART_MAIN);
+    lv_obj_set_flex_flow(batt_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(batt_cont, 0, LV_PART_MAIN);
+
+    lv_obj_t *batt_img = lv_img_create(batt_cont);
+    lv_img_set_src(batt_img, &img_battery);
+    lv_obj_align(batt_img, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_t *batt_img1 = lv_img_create(batt_cont);
+    lv_img_set_src(batt_img1, &img_battery);
+    lv_obj_align(batt_img1, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_t *batt_img2 = lv_img_create(batt_cont);
+    lv_img_set_src(batt_img2, &img_battery);
+    lv_obj_align(batt_img2, LV_ALIGN_RIGHT_MID, 0, 0);
+
+
+    lv_obj_t *batt_label = lv_label_create(batt_cont);
+    lv_obj_set_style_text_color(batt_label, lv_palette_main(LV_PALETTE_GREEN), LV_PART_MAIN);
+    lv_obj_set_style_text_font(batt_label, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_align(batt_label, LV_ALIGN_RIGHT_MID, 2, 0);
+    lv_label_set_text(batt_label, watch.getBatteryPercent() == -1 ? "N/A" : String(watch.getBatteryPercent()).c_str());
+    lv_timer_create(update_battery_label_cb, 10000, batt_label);
+
+    lv_obj_t *info_table = lv_obj_create(parent);
+    lv_obj_set_size(info_table, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(info_table, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(info_table, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(info_table, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(info_table, 10, LV_PART_MAIN);
+    lv_obj_align(info_table, LV_ALIGN_BOTTOM_MID, 0, -24);    
+
     /*Create a transition*/
     static const lv_style_prop_t props[] = {LV_STYLE_BG_COLOR, LV_STYLE_PROP_INV};
     static lv_style_transition_dsc_t transition_dsc;
@@ -683,7 +765,6 @@ void devicesInformation(lv_obj_t *parent)
 
     static lv_style_t style_indicator;
     static lv_style_t style_knob;
-
 
     lv_style_init(&style_indicator);
     lv_style_set_bg_opa(&style_indicator, LV_OPA_COVER);
@@ -700,33 +781,60 @@ void devicesInformation(lv_obj_t *parent)
     lv_style_set_pad_all(&style_knob, 6); /*Makes the knob larger*/
     lv_style_set_transition(&style_knob, &transition_dsc);
 
-    lv_obj_t *label = lv_label_create(parent);
+    lv_obj_t *label = lv_label_create(info_table);
     String text = "Yorqinlik:";
     static lv_style_t label_style;
     lv_style_init(&label_style);
     lv_style_set_text_color(&label_style, lv_color_white());
     lv_obj_add_style(label, &label_style, LV_PART_MAIN);
+    lv_style_set_pad_hor(&label_style, 52);
     lv_label_set_text(label, text.c_str());
     lv_obj_set_style_text_font(label, &font_jetBrainsMono, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 80);
-
+    lv_obj_align_to(label, info_table, LV_ALIGN_TOP_MID, 32, 0);
 
     /*Create a slider and add the style*/
-    lv_obj_t *slider = lv_slider_create(parent);
+    lv_obj_t *slider = lv_slider_create(info_table);
     lv_obj_set_size(slider, 200, 30);
     lv_slider_set_range(slider, 5, 255);
     lv_obj_add_style(slider, &style_indicator, LV_PART_INDICATOR);
     lv_obj_add_style(slider, &style_knob, LV_PART_KNOB);
     lv_obj_align_to(slider, label, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
-    lv_slider_set_value(slider, watch.getBrightness(), LV_ANIM_OFF);
+    lv_slider_set_value(slider, watch.getBrightness() * 255. / 100, LV_ANIM_OFF);
 
     /*Create a label below the slider*/
-    lv_obj_t *slider_label = lv_label_create(parent);
+    lv_obj_t *slider_label = lv_label_create(slider);
     lv_label_set_text_fmt(slider_label, "%u%%", watch.getBrightness());
     lv_obj_set_style_text_color(slider_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_add_event_cb(slider, slider_event_cb, LV_EVENT_VALUE_CHANGED, slider_label);
     lv_obj_align_to(slider_label, slider, LV_ALIGN_CENTER, 0, 0);
+
+
+    lv_obj_t *label1 = lv_label_create(info_table);
+    String text1 = "Radio xolati:";
+    static lv_style_t label_style1;
+    lv_style_init(&label_style1);
+    lv_style_set_text_color(&label_style1, lv_color_white());
+    lv_obj_add_style(label1, &label_style1, LV_PART_MAIN);
+    lv_label_set_text(label1, text1.c_str());
+    lv_style_set_pad_top(&label_style1, 16);
+    lv_style_set_pad_hor(&label_style1, 20);
+    lv_obj_set_style_text_font(label1, &font_jetBrainsMono, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label1, DEFAULT_COLOR, LV_PART_MAIN);
+    lv_obj_align(label1, LV_ALIGN_BOTTOM_MID, 32, 0);
+
+    lv_obj_t *dd ;
+    dd = lv_dropdown_create(info_table);
+    lv_dropdown_set_options(dd, "Yoniq\n"
+                                "O'chiq"
+                           );
+    lv_dropdown_set_selected(dd, 1);
+    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_size(dd, 170, 50);
+    lv_obj_add_event_cb(dd, radio_rxtx_cb,
+                        LV_EVENT_VALUE_CHANGED
+                        , NULL);
+    lv_obj_align_to(dd, label1, LV_ALIGN_BOTTOM_MID, 16, 0);
 
     // label = lv_label_create(parent);
     // lv_label_set_text(label, "LightSleep:");
@@ -840,18 +948,7 @@ static void radio_rxtx_cb(lv_event_t *e)
     Serial.printf("Option: %s id:%u\n", buf, id);
     switch (id) {
     case 0:
-        //lv_timer_resume(transmitTask);
-        radioTransmitFlag = false;
-
-        // TX
-        // send the first packet on this node
-        Serial.print(F("[Radio] Sending first packet ... "));
-        transmissionState = radio.startTransmit("Hello World!");
-        transmitFlag = true;
-
-        break;
-    case 1:
-        //lv_timer_resume(transmitTask);
+        lv_timer_resume(transmitTask);
         radioTransmitFlag = false;
 
         // RX
@@ -862,282 +959,20 @@ static void radio_rxtx_cb(lv_event_t *e)
             Serial.println(F("failed "));
         }
         transmitFlag = false;
-        lv_textarea_set_text(radio_ta, "[RX]:Listening.");
+        //lv_textarea_set_text(radio_ta, "[RX]:Listening.");
 
         break;
-    case 2:
-        //if (!transmitTask->paused) {
+    case 1:
+        if (!transmitTask->paused) {
             //lv_textarea_set_text(radio_ta, "Radio has disable.");
-            //lv_timer_pause(transmitTask);
+            lv_timer_pause(transmitTask);
             radio.standby();
+            transmitFlag = true;
             // watch.sleep();
-        //}
-        break;
-    default:
+        }
         break;
     }
 }
-
-static void radio_bandwidth_cb(lv_event_t *e)
-{
-    lv_obj_t *obj = lv_event_get_target(e);
-    char buf[32];
-    lv_dropdown_get_selected_str(obj, buf, sizeof(buf));
-    uint32_t id = lv_dropdown_get_selected(obj);
-    Serial.printf("Option: %s id:%u\n", buf, id);
-
-    // set carrier bandwidth
-    if (id > sizeof(radio_bandwidth_args_list) / sizeof(radio_bandwidth_args_list[0])) {
-        Serial.println("invalid bandwidth params!");
-        return;
-    }
-
-    //bool isRunning = !transmitTask->paused;
-    //if (isRunning) {
-        //lv_timer_pause(transmitTask);
-        //radio.standby();
-    //}
-
-    // set bandwidth
-
-    if (radio.setBandwidth(radio_bandwidth_args_list[id]) == RADIOLIB_ERR_INVALID_BANDWIDTH) {
-        Serial.println(F("Selected bandwidth is invalid for this module!"));
-    }
-
-    radio_setting.bw = radio_bandwidth_args_list[id];
-
-
-    if (transmitFlag) {
-        radio.startTransmit("");
-    } else {
-        radio.startReceive();
-    }
-
-    //if (isRunning) {
-        //lv_timer_resume(transmitTask);
-    //}
-}
-
-static void radio_freq_cb(lv_event_t *e)
-{
-    lv_obj_t *obj = lv_event_get_target(e);
-    char buf[32];
-    lv_dropdown_get_selected_str(obj, buf, sizeof(buf));
-    uint32_t id = lv_dropdown_get_selected(obj);
-    Serial.printf("Option: %s id:%u\n", buf, id);
-
-    // set carrier frequency
-    if (id > sizeof(radio_freq_args_list) / sizeof(radio_freq_args_list[0])) {
-        Serial.println("invalid params!");
-        return;
-    }
-
-    //bool isRunning = !transmitTask->paused;
-    //if (isRunning) {
-        //lv_timer_pause(transmitTask);
-    //}
-
-    if (radio.setFrequency(radio_freq_args_list[id]) == RADIOLIB_ERR_INVALID_FREQUENCY) {
-        Serial.println(F("Selected frequency is invalid for this module!"));
-    }
-
-    radio_setting.freq = radio_freq_args_list[id];
-
-    if (transmitFlag) {
-        radio.startTransmit("");
-    } else {
-        radio.startReceive();
-    }
-
-    //if (isRunning) {
-        //lv_timer_resume(transmitTask);
-    //}
-
-}
-
-static void radio_power_cb(lv_event_t *e)
-{
-    lv_obj_t *obj = lv_event_get_target(e);
-    char buf[32];
-    lv_dropdown_get_selected_str(obj, buf, sizeof(buf));
-    uint32_t id = lv_dropdown_get_selected(obj);
-    Serial.printf("Option: %s id:%u\n", buf, id);
-
-
-    //bool isRunning = !transmitTask->paused;
-    //if (isRunning) {
-        //lv_timer_pause(transmitTask);
-        //radio.standby();
-    //}
-    /*
-    * SX1262 Power level   2 ~ 22dBm
-    * * * * */
-    if (id > sizeof(radio_power_args_list) / sizeof(radio_power_args_list[0])) {
-        Serial.println("invalid dBm params!");
-        return;
-    }
-    if (radio.setOutputPower(radio_power_args_list[id]) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
-        Serial.println(F("Selected output power is invalid for this module!"));
-    }
-
-    radio_setting.pw = radio_power_args_list[id];
-
-    if (transmitFlag) {
-        radio.startTransmit("");
-    } else {
-        radio.startReceive();
-    }
-
-    //if (isRunning) {
-        //lv_timer_resume(transmitTask);
-    //}
-}
-
-static void radio_tx_interval_cb(lv_event_t *e)
-{
-    lv_obj_t *obj = lv_event_get_target(e);
-    char buf[32];
-    lv_dropdown_get_selected_str(obj, buf, sizeof(buf));
-    uint32_t id = lv_dropdown_get_selected(obj);
-    Serial.printf("Option: %s id:%u\n", buf, id);
-
-    // set carrier bandwidth
-    uint16_t interval[] = {100, 200, 500, 1000, 2000, 3000};
-    if (id > sizeof(interval) / sizeof(interval[0])) {
-        Serial.println("invalid  tx interval params!");
-        return;
-    }
-    // Save the configured transmission interval
-    configTransmitInterval = interval[id];
-    //lv_timer_set_period(transmitTask, interval[id]);
-}
-
-void radioPingPong(lv_obj_t *parent)
-{
-    static lv_style_t style;
-    lv_style_init(&style);
-    lv_style_set_bg_color(&style, lv_color_black());
-    lv_style_set_text_color(&style, lv_color_white());
-    lv_style_set_border_width(&style, 5);
-    lv_style_set_border_color(&style, DEFAULT_COLOR);
-    lv_style_set_outline_color(&style, DEFAULT_COLOR);
-    lv_style_set_bg_opa(&style, LV_OPA_50);
-
-    static lv_style_t cont_style;
-    lv_style_init(&cont_style);
-    lv_style_set_bg_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_line_opa(&cont_style, LV_OPA_TRANSP);
-    lv_style_set_border_width(&cont_style, 0);
-    lv_style_set_text_color(&cont_style, DEFAULT_COLOR);
-    // lv_style_set_text_color(&cont_style, lv_color_white());
-
-    lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, lv_disp_get_hor_res(NULL), 400);
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
-    lv_obj_add_style(cont, &cont_style, LV_PART_MAIN);
-
-    radio_ta = lv_textarea_create(cont);
-    lv_obj_set_size(radio_ta, 210, 42);
-    lv_obj_align(radio_ta, LV_ALIGN_TOP_MID, 0, 20);
-    lv_textarea_set_text(radio_ta, "Radio Sozlamalari");
-    lv_textarea_set_max_length(radio_ta, 256);
-    lv_textarea_set_cursor_click_pos(radio_ta, false);
-    lv_textarea_set_text_selection(radio_ta, false);
-    lv_obj_add_style(radio_ta, &style, LV_PART_MAIN);
-    // lv_textarea_set_one_line(radio_ta, true);
-
-    /////////////////////////////!!!!!!!!!!!!!!!!!!!
-
-    static lv_style_t cont1_style;
-    lv_style_init(&cont1_style);
-    lv_style_set_bg_opa(&cont1_style, LV_OPA_TRANSP);
-    lv_style_set_bg_img_opa(&cont1_style, LV_OPA_TRANSP);
-    lv_style_set_line_opa(&cont1_style, LV_OPA_TRANSP);
-    lv_style_set_text_color(&cont1_style, DEFAULT_COLOR);
-    lv_style_set_text_color(&cont1_style, lv_color_white());
-    lv_style_set_border_width(&cont1_style, 5);
-    lv_style_set_border_color(&cont1_style, DEFAULT_COLOR);
-    lv_style_set_outline_color(&cont1_style, DEFAULT_COLOR);
-
-
-    //! cont1
-    lv_obj_t *cont1 = lv_obj_create(cont);
-    lv_obj_set_scrollbar_mode(cont1, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_flex_flow(cont1, LV_FLEX_FLOW_ROW_WRAP);
-    // lv_obj_set_scroll_dir(cont1, LV_DIR_HOR);
-    lv_obj_set_size(cont1, 210, 300);
-    lv_obj_add_style(cont1, &cont1_style, LV_PART_MAIN);
-
-
-    lv_obj_t *dd ;
-
-    dd = lv_dropdown_create(cont1);
-    lv_dropdown_set_options(dd, "TX\n"
-                                "RX\n"
-                                "O'chirish"
-                           );
-    lv_dropdown_set_selected(dd, 2);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_obj_add_event_cb(dd, radio_rxtx_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-
-    dd = lv_dropdown_create(cont1);
-    lv_dropdown_set_options(dd, radio_freq_list);
-
-    lv_dropdown_set_selected(dd, RADIO_FREQ_DROP_INDEX);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_obj_add_event_cb(dd, radio_freq_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-    radio_setting.freq = radio_freq_args_list[RADIO_FREQ_DROP_INDEX];
-
-
-    dd = lv_dropdown_create(cont1);
-    lv_dropdown_set_options(dd, radio_bandwidth_list);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_dropdown_set_selected(dd, RADIO_BW_DROP_INDEX);
-    lv_obj_add_event_cb(dd, radio_bandwidth_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-    radio_setting.bw = radio_bandwidth_args_list[RADIO_BW_DROP_INDEX];
-
-
-    dd = lv_dropdown_create(cont1);
-    lv_dropdown_set_options(dd, radio_power_level_list);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_dropdown_set_selected(dd, RADIO_TX_POWER_DROP_INDEX);
-    lv_obj_add_event_cb(dd, radio_power_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-
-    radio_setting.pw = radio_power_args_list[RADIO_TX_POWER_DROP_INDEX];
-
-
-    dd = lv_dropdown_create(cont1);
-    lv_dropdown_set_options(dd, "100ms\n"
-                                "200ms\n"
-                                "500ms\n"
-                                "1000ms\n"
-                                "2000ms\n"
-                                "3000ms"
-                           );
-    lv_dropdown_set_selected(dd, 1);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_obj_add_event_cb(dd, radio_tx_interval_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-
-}
-
 
 static void progressBarSubscriberCB(lv_event_t *e)
 {
@@ -1481,6 +1316,14 @@ void datetimeVeiw(lv_obj_t *parent)
     lv_obj_add_event_cb(btn, datetime_event_handler, LV_EVENT_CLICKED, NULL);
 }
 
+void radioDisplayTask(lv_timer_t *timer)
+{
+    while (msg_buf.size()) {
+        devicesMessages_add(msg_buf.front());
+        msg_buf.pop(); // Remove processed message
+    }
+}
+
 void factory_ui()
 {
     static lv_style_t bgStyle;
@@ -1494,30 +1337,24 @@ void factory_ui()
 
     lv_obj_t *t7 = lv_tileview_add_tile(tileview, 0, 1, LV_DIR_RIGHT);
     lv_obj_t *t2 = lv_tileview_add_tile(tileview, 1, 1, LV_DIR_HOR | LV_DIR_TOP);
-
     lv_obj_t *t3 = lv_tileview_add_tile(tileview, 1, 0, LV_DIR_BOTTOM);
-    
-    lv_obj_t *t4 = lv_tileview_add_tile(tileview, 3, 1, LV_DIR_LEFT);
     lv_obj_t *t5 = lv_tileview_add_tile(tileview, 2, 1, LV_DIR_HOR);
 
     datetimeVeiw(t7);
     analogclock3(t2);
-
     devicesInformation(t3);
-
-    radioPingPong(t4);
     devicesMessages(t5);
 
     uint32_t mask = watch.getDeviceProbe();
 
-    //transmitTask = lv_timer_create(radioTask, 200, NULL);
+    transmitTask = lv_timer_create(radioDisplayTask, 200, NULL);
 
     // Create FreeRTOS task for radio polling (runs independently of LVGL timers)
     if (radioTaskHandle == NULL) {
         xTaskCreate(
             radioTask,   // Task function
             "RadioTask",         // Name
-            4096,                 // Stack size
+            8192,                 // Stack size
             NULL,                 // Parameter
             1,                    // Priority
             &radioTaskHandle      // Task handle

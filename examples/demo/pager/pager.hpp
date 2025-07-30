@@ -39,6 +39,9 @@ LV_IMG_DECLARE(watch_if_5);
 LV_IMG_DECLARE(watch_if_6);
 LV_IMG_DECLARE(watch_if_8);
 
+LV_IMG_DECLARE(img_temp);
+LV_IMG_DECLARE(img_battery);
+
 extern uint8_t pageId;
 extern bool canScreenOff;
 extern bool usbPlugIn;

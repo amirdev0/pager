@@ -86,6 +86,8 @@
 #define LEDC_BACKLIGHT_BIT_WIDTH    8
 #define LEDC_BACKLIGHT_FREQ         1000
 
+//static RTC_DATA_ATTR bool log_cleared = false;
+
 typedef enum {
     PMU_BTN_WAKEUP,
     ESP_TIMER_WAKEUP,
@@ -167,6 +169,8 @@ public:
     uint32_t getDeviceProbe();
 
     void disableBootDisplay();
+
+    int writelog(const char *message);
     
 private:
 

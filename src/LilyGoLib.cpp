@@ -67,6 +67,15 @@ uint32_t LilyGoLib::getDeviceProbe()
     return devices_probe;
 }
 
+int LilyGoLib::writelog(const char *message)
+{
+    File logfile = LittleFS.open("/log.txt", "a", true);
+    
+    logfile.println(message);
+    logfile.close();
+    return 0; // success
+}
+
 bool LilyGoLib::begin(Stream *stream)
 {
     bool res;
@@ -124,6 +133,30 @@ bool LilyGoLib::begin(Stream *stream)
         }
         LittleFS.format();
     }
+
+    File logfile = LittleFS.open("/log.txt", "r", true);
+
+        log_println("LittleFS log file contents:");
+        while (logfile.available()) {
+            String line = logfile.readStringUntil('\n');
+            log_println(line.c_str());
+        }
+        logfile.close();
+
+
+    //#define CLEAR_LOG_FILE
+    
+    #ifdef CLEAR_LOG_FILE
+    //if (!log_cleared) {
+    log_println("Clearing LittleFS log file...");
+    LittleFS.format();
+    if (!LittleFS.exists("/log.txt"))
+        log_println("Log file cleared.");
+    else
+        log_println("Failed to clear log file.");
+        //log_cleared = true;
+    //}
+    #endif
 
     if (bootDisplay) {
         fillScreen(TFT_BLACK);

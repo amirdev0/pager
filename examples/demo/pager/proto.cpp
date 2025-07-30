@@ -10,7 +10,7 @@ String xorEncryptDecrypt(String input, String key)
     return output;
 }
 
-bool printMessage(String& msg)
+bool checkMessage(String& msg)
 {
     static uint8_t message_id = 0;
     if (msg[0] == message_id)
