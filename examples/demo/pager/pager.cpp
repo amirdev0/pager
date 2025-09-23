@@ -811,7 +811,7 @@ void devicesInformation(lv_obj_t *parent)
 
 
     lv_obj_t *label1 = lv_label_create(info_table);
-    String text1 = "Radio xolati:";
+    String text1 = "Radio:";
     static lv_style_t label_style1;
     lv_style_init(&label_style1);
     lv_style_set_text_color(&label_style1, lv_color_white());
@@ -825,8 +825,8 @@ void devicesInformation(lv_obj_t *parent)
 
     lv_obj_t *dd ;
     dd = lv_dropdown_create(info_table);
-    lv_dropdown_set_options(dd, "Yoniq\n"
-                                "O'chiq"
+    lv_dropdown_set_options(dd, "On\n"
+                                "Off"
                            );
     lv_dropdown_set_selected(dd, 1);
     lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);

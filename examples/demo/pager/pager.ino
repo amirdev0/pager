@@ -23,6 +23,7 @@
  */
 
 #include "pager.hpp"
+#include "proto.hpp"
 
 void setup()
 {
@@ -40,6 +41,10 @@ void setup()
     beginLvglHelper(false);
     settingButtonStyle();
     factory_ui();
+
+    Serial.printf("Group ID: %#x\n", GROUP_ID);
+    Serial.printf("Device ID: %#x\n", DEVICE_ID);
+
 
     usbPlugIn =  watch.isVbusIn();
 }

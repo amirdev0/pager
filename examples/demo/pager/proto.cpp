@@ -23,7 +23,7 @@ bool checkMessage(String& msg)
     case UNICAST_HEADER:
         Serial.println("Unicast entered");
         msg.remove(0, 2);
-        return (msg[2] << 8) | msg[3] == DEVICE_ID;
+        return ((msg[2] << 8) | msg[3]) == DEVICE_ID;
     case GROUP_HEADER:
         Serial.println("Multicast entered");
         msg.remove(0, 1);
