@@ -348,7 +348,15 @@ void lowPowerEnergyHandler2()
  *            UI SETTING            *
  ************************************
 */
-std::queue<String> msg_buf; // Buffer to hold received messages
+
+// Structure to hold message with read status
+typedef struct {
+    String message;
+    bool isRead;
+    unsigned long timestamp;
+} message_t;
+
+std::queue<message_t> msg_buf; // Buffer to hold received messages with read status
 void radioTask(void * pvParameters)
 {
     const TickType_t xDelay = pdMS_TO_TICKS(500); // Delay for 500ms
@@ -416,9 +424,11 @@ void radioTask(void * pvParameters)
                     watch.setWaveform(0, 80); 
                     watch.run();
 
-                    if (msg_buf.size() > 5)
+                    if (msg_buf.size() > MAX_MESSAGES)
                         msg_buf.pop();
-                    msg_buf.push(str);
+                    
+                    message_t new_msg = {str, false, millis()};
+                    msg_buf.push(new_msg);
                     
                     if (watch.writelog(str.c_str()) == 0) {
                         Serial.println("Log written successfully.");
@@ -853,6 +863,10 @@ static lv_obj_t *devices_messages_cont = NULL;
 static lv_obj_t *devices_message_tiles[DEVICES_MESSAGES_MAX] = {NULL};
 static int devices_messages_count = 0;
 
+// Tick symbols for read status
+#define SINGLE_TICK "✓"    // Unread message
+#define DOUBLE_TICK "✓✓"   // Read message
+
 void devicesMessages(lv_obj_t *parent)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -893,7 +907,7 @@ static String devicesMessages_get_datetime_str() {
 }
 
 // Call this to add a message tile to the stack and update the UI
-void devicesMessages_add(const String& msg)
+void devicesMessages_add(const String& msg, bool isRead = false)
 {
     if (!devices_messages_cont) return;
 
@@ -917,10 +931,11 @@ void devicesMessages_add(const String& msg)
     lv_obj_set_style_pad_all(tile, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_row(devices_messages_cont, 12, LV_PART_MAIN);
 
-    // Date/time label
+    // Date/time label with read status indicator
     lv_obj_t *dt_label = lv_label_create(tile);
     String dt = devicesMessages_get_datetime_str();
-    lv_label_set_text(dt_label, dt.c_str());
+    String dt_with_status = dt + " " + (isRead ? DOUBLE_TICK : SINGLE_TICK);
+    lv_label_set_text(dt_label, dt_with_status.c_str());
     lv_obj_set_style_text_color(dt_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
     lv_obj_align(dt_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -931,6 +946,38 @@ void devicesMessages_add(const String& msg)
     lv_obj_set_width(msg_label, lv_pct(100));
     lv_obj_set_style_text_color(msg_label, lv_color_black(), LV_PART_MAIN);
     lv_obj_align(msg_label, LV_ALIGN_TOP_LEFT, 0, 22);
+
+    // Store read status in user data for later retrieval
+    lv_obj_set_user_data(tile, (void*)(isRead ? 1 : 0));
+
+    // Add click event to mark message as read
+    lv_obj_add_event_cb(tile, [](lv_event_t *e) {
+        lv_event_code_t code = lv_event_get_code(e);
+        if (code == LV_EVENT_CLICKED) {
+            lv_obj_t *tile = lv_event_get_target(e);
+            bool current_read_status = (bool)(intptr_t)lv_obj_get_user_data(tile);
+            
+            // If message is unread, mark it as read
+            if (!current_read_status) {
+                // Update user data
+                lv_obj_set_user_data(tile, (void*)1);
+                
+                // Find and update the date/time label
+                lv_obj_t *dt_label = lv_obj_get_child(tile, 0); // First child is date/time label
+                if (dt_label) {
+                    const char *current_text = lv_label_get_text(dt_label);
+                    String text_str = String(current_text);
+                    
+                    // Replace single tick with double tick
+                    text_str.replace(SINGLE_TICK, DOUBLE_TICK);
+                    lv_label_set_text(dt_label, text_str.c_str());
+                }
+                
+                Serial.println("Message marked as read");
+            }
+        }
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
 
     // Save tile in stack
     devices_message_tiles[devices_messages_count++] = tile;
@@ -1319,7 +1366,8 @@ void datetimeVeiw(lv_obj_t *parent)
 void radioDisplayTask(lv_timer_t *timer)
 {
     while (msg_buf.size()) {
-        devicesMessages_add(msg_buf.front());
+        message_t msg = msg_buf.front();
+        devicesMessages_add(msg.message, msg.isRead);
         msg_buf.pop(); // Remove processed message
     }
 }

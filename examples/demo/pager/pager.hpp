@@ -3,6 +3,8 @@
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 
+#define MAX_MESSAGES 10
+
 #define LVGL_MESSAGE_PROGRESS_CHANGED_ID        (88)
 #define RADIO_TRANSMIT_PAGE_ID                  4
 
@@ -78,7 +80,7 @@ void factory_ui();
 void radioTask(lv_timer_t *parent);
 static void draw_part_event_cb(lv_event_t *e);
 
-void devicesMessages_add(const String& msg);
+void devicesMessages_add(const String& msg, bool isRead);
 void analogclock3(lv_obj_t *parent);
 static void slider_event_cb(lv_event_t *e);
 static void light_sw_event_cb(lv_event_t *e);
