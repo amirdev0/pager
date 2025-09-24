@@ -20,14 +20,16 @@ bool checkMessage(String& msg)
 
     switch (msg[1])
     {
-    case UNICAST_HEADER:
-        Serial.println("Unicast entered");
+    case UNICAST_HEADER: {
+        uint16_t device_id = (msg[2] << 8) | msg[3];
+        Serial.println("Unicast device ID: " + String(device_id, HEX));
         msg.remove(0, 2);
-        return ((msg[2] << 8) | msg[3]) == DEVICE_ID;
+        return device_id == DEVICE_ID;
+    }
     case GROUP_HEADER:
-        Serial.println("Multicast entered");
+        Serial.println("Multicast group ID: " + String(msg[2], HEX));
         msg.remove(0, 1);
-        return msg[1] == GROUP_ID;
+        return msg[2] == GROUP_ID;
     case BROADCAST_HEADER:
         Serial.println("Broadcast entered");
         msg.remove(0, 1);
