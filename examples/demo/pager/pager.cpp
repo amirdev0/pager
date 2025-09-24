@@ -1,9 +1,14 @@
 #include "pager.hpp"
 #include "proto.hpp"
+#include "notification_sound.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <queue>
+#include <AudioOutputI2S.h>
+#include <AudioFileSourcePROGMEM.h>
+#include <AudioGeneratorWAV.h>
 
+#define MESSAGES_MAX 10
 TaskHandle_t radioTaskHandle = NULL;
 
 static lv_obj_t *hour_img;
@@ -71,6 +76,12 @@ static uint32_t configTransmitInterval = 0;
 // Save brightness value
 static RTC_DATA_ATTR int brightnessLevel = 0;
 
+// Audio notification objects
+AudioGeneratorWAV *audioWav = NULL;
+AudioFileSourcePROGMEM *audioFile = NULL;
+AudioOutputI2S *audioOut = NULL;
+TaskHandle_t audioTaskHandle = NULL;
+const uint8_t i2sPort = 1;  // Use I2S port 1 for audio
 
 typedef  struct _lv_datetime {
     lv_obj_t *obj;
@@ -98,6 +109,64 @@ typedef struct  {
     float bw;
     float pw;
 } radio_params;
+
+// Audio notification task
+void audioNotificationTask(void *params) {
+    vTaskSuspend(NULL);
+    while (1) {
+        if (audioWav->isRunning()) {
+            if (!audioWav->loop()) {
+                audioWav->stop();
+                vTaskSuspend(NULL);
+            }
+        } else {
+            vTaskSuspend(NULL);
+        }
+        delay(2);
+    }
+    vTaskDelete(NULL);
+}
+
+// Initialize audio system
+void initializeAudio() {
+    if (audioOut) return; // Already initialized
+    
+    audioFile = new AudioFileSourcePROGMEM();
+    audioOut = new AudioOutputI2S(i2sPort, AudioOutputI2S::EXTERNAL_I2S);
+    audioOut->SetPinout(BOARD_DAC_IIS_BCK, BOARD_DAC_IIS_WS, BOARD_DAC_IIS_DOUT);
+    audioOut->SetGain(0.3); // Adjust gain for notification volume
+    audioWav = new AudioGeneratorWAV();
+    
+    // Create audio task
+    xTaskCreate(audioNotificationTask, "audioNotify", 8192, NULL, 0, &audioTaskHandle);
+    //vTaskSuspend(audioTaskHandle);
+    
+    Serial.println("Audio system initialized");
+}
+
+// Play notification sound
+void playNotificationSound() {
+    if (!audioOut || !audioFile || !audioWav) {
+        Serial.println("Audio system not initialized");
+        return;
+    }
+    
+    // Stop any currently playing audio
+    if (audioWav->isRunning()) {
+        audioWav->stop();
+    }
+    
+    // Start playing notification
+    audioFile->open(notification_wav, notification_wav_len);
+    audioWav->begin(audioFile, audioOut);
+    
+    // Resume the audio task
+    if (audioTaskHandle) {
+        vTaskResume(audioTaskHandle);
+    }
+    
+    Serial.println("Playing notification sound");
+}
 
 static radio_params radio_setting;
 
@@ -421,10 +490,14 @@ void radioTask(void * pvParameters)
                 //msg = msg.substring(0, len);
                 
                 if (checkMessage(str)) {
-                    watch.setWaveform(0, 80); 
+                    // Trigger vibration for message notification
+                    watch.setWaveform(0, 16); 
                     watch.run();
+                    
+                    // Play audio notification for new message
+                    playNotificationSound();
 
-                    if (msg_buf.size() > MAX_MESSAGES)
+                    if (msg_buf.size() > MESSAGES_MAX)
                         msg_buf.pop();
                     
                     message_t new_msg = {str, false, millis()};
@@ -858,14 +931,10 @@ void devicesInformation(lv_obj_t *parent)
 
 
 // Message tile stack for devicesMessages
-#define DEVICES_MESSAGES_MAX 5
+#define DEVICES_MESSAGES_MAX MESSAGES_MAX
 static lv_obj_t *devices_messages_cont = NULL;
 static lv_obj_t *devices_message_tiles[DEVICES_MESSAGES_MAX] = {NULL};
 static int devices_messages_count = 0;
-
-// Tick symbols for read status
-#define SINGLE_TICK "✓"    // Unread message
-#define DOUBLE_TICK "✓✓"   // Read message
 
 void devicesMessages(lv_obj_t *parent)
 {
@@ -934,7 +1003,7 @@ void devicesMessages_add(const String& msg, bool isRead = false)
     // Date/time label with read status indicator
     lv_obj_t *dt_label = lv_label_create(tile);
     String dt = devicesMessages_get_datetime_str();
-    String dt_with_status = dt + " " + (isRead ? DOUBLE_TICK : SINGLE_TICK);
+    String dt_with_status = dt;
     lv_label_set_text(dt_label, dt_with_status.c_str());
     lv_obj_set_style_text_color(dt_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
     lv_obj_align(dt_label, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -969,7 +1038,7 @@ void devicesMessages_add(const String& msg, bool isRead = false)
                     String text_str = String(current_text);
                     
                     // Replace single tick with double tick
-                    text_str.replace(SINGLE_TICK, DOUBLE_TICK);
+                    //text_str.replace(SINGLE_TICK, DOUBLE_TICK);
                     lv_label_set_text(dt_label, text_str.c_str());
                 }
                 
@@ -1412,6 +1481,10 @@ void factory_ui()
     lv_disp_trig_activity(NULL);
 
     lv_obj_set_tile(tileview, t2, LV_ANIM_OFF);
+
+    
+    //msg_buf.push({String("Welcome to use T-Watch!"), true, millis()}); // Initial message
+    //playNotificationSound();
 }
 
 

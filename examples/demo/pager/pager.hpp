@@ -3,8 +3,6 @@
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 
-#define MAX_MESSAGES 10
-
 #define LVGL_MESSAGE_PROGRESS_CHANGED_ID        (88)
 #define RADIO_TRANSMIT_PAGE_ID                  4
 
@@ -112,3 +110,8 @@ void setPMUFlag();
 void settingPMU();
 void setRadioFlag(void);
 void settingRadio();
+
+// Audio notification functions
+void initializeAudio();
+void playNotificationSound();
+void audioNotificationTask(void *params);

@@ -37,6 +37,9 @@ void setup()
     settingPMU();
     settingSensor();
     settingRadio();
+    
+    // Initialize audio system for notifications
+    initializeAudio();
 
     beginLvglHelper(false);
     settingButtonStyle();
