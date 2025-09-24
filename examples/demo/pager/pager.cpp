@@ -83,6 +83,9 @@ AudioOutputI2S *audioOut = NULL;
 TaskHandle_t audioTaskHandle = NULL;
 const uint8_t i2sPort = 1;  // Use I2S port 1 for audio
 
+// Track last visited page for message read status handling
+static uint8_t last_visited_page = 255; // Track last visited page (255 = uninitialized)
+
 typedef  struct _lv_datetime {
     lv_obj_t *obj;
     const char *name;
@@ -426,6 +429,8 @@ typedef struct {
 } message_t;
 
 std::queue<message_t> msg_buf; // Buffer to hold received messages with read status
+static std::queue<message_t> old_messages_buf; // Buffer for old (read) messages
+static std::queue<message_t> displayed_messages_buf; // Buffer to track currently displayed messages
 void radioTask(void * pvParameters)
 {
     const TickType_t xDelay = pdMS_TO_TICKS(500); // Delay for 500ms
@@ -655,6 +660,26 @@ void tileview_change_cb(lv_event_t *e)
     canScreenOff = true;
     if (pageId == RADIO_TRANSMIT_PAGE_ID)
         canScreenOff = false;
+    
+    // Handle message page transitions
+    const uint8_t MESSAGES_PAGE_ID = 3; // t5 position in the tileview
+    
+    // If we're leaving the messages page, mark all messages as read
+    if (last_visited_page == MESSAGES_PAGE_ID && pageId != MESSAGES_PAGE_ID) {
+        Serial.println("Leaving messages page - marking all messages as read");
+        devicesMessages_mark_all_read();
+    }
+    
+    // If we're entering the messages page from a different page, rebuild the display 
+    if (pageId == MESSAGES_PAGE_ID && last_visited_page != MESSAGES_PAGE_ID) {
+        Serial.println("Entering messages page - rebuilding display");
+        // Only rebuild if we have old messages to show
+        if (old_messages_buf.size() > 0) {
+            devicesMessages_rebuild_display();
+        }
+    }
+    
+    last_visited_page = pageId;
     lastPageID = pageId;
 }
 
@@ -936,6 +961,10 @@ static lv_obj_t *devices_messages_cont = NULL;
 static lv_obj_t *devices_message_tiles[DEVICES_MESSAGES_MAX] = {NULL};
 static int devices_messages_count = 0;
 
+// Separator tile and old messages tracking
+static lv_obj_t *separator_tile = NULL;
+static bool separator_created = false;
+
 void devicesMessages(lv_obj_t *parent)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -955,7 +984,7 @@ void devicesMessages(lv_obj_t *parent)
     lv_obj_set_style_border_width(devices_messages_cont, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(devices_messages_cont, 0, LV_PART_MAIN);
 
-    // Show initial stack if any
+    // Clear any existing message tiles
     for (int i = 0; i < devices_messages_count; ++i) {
         if (devices_message_tiles[i]) {
             lv_obj_del(devices_message_tiles[i]);
@@ -963,6 +992,10 @@ void devicesMessages(lv_obj_t *parent)
         }
     }
     devices_messages_count = 0;
+    
+    // Reset separator state
+    separator_tile = NULL;
+    separator_created = false;
 }
 
 // Helper to format date/time string
@@ -975,26 +1008,43 @@ static String devicesMessages_get_datetime_str() {
     return String(buf);
 }
 
-// Call this to add a message tile to the stack and update the UI
-void devicesMessages_add(const String& msg, bool isRead = false)
-{
-    if (!devices_messages_cont) return;
+// Create separator tile
+void devicesMessages_create_separator() {
+    if (!devices_messages_cont || separator_created) return;
 
-    // If full, remove the oldest (topmost) tile
-    if (devices_messages_count == DEVICES_MESSAGES_MAX) {
-        lv_obj_t *oldest = devices_message_tiles[0];
-        if (oldest) lv_obj_del(oldest);
-        for (int i = 1; i < DEVICES_MESSAGES_MAX; ++i) {
-            devices_message_tiles[i-1] = devices_message_tiles[i];
-        }
-        devices_messages_count--;
-    }
+    separator_tile = lv_obj_create(devices_messages_cont);
+    lv_obj_set_width(separator_tile, lv_pct(100));
+    lv_obj_set_height(separator_tile, 40);
+    lv_obj_set_style_bg_color(separator_tile, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    lv_obj_set_style_radius(separator_tile, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(separator_tile, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(separator_tile, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(separator_tile, 8, LV_PART_MAIN);
 
+    // Add label for "Old messages"
+    //lv_obj_t *sep_label = lv_label_create(separator_tile);
+    //lv_label_set_text(sep_label, "Old messages");
+    //lv_obj_set_style_text_color(sep_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    //lv_obj_set_style_text_font(sep_label, &font_jetBrainsMono, LV_PART_MAIN);
+    //lv_obj_center(sep_label);
+
+    separator_created = true;
+}
+
+// Helper function to create a message tile
+lv_obj_t* devicesMessages_create_tile(const String& msg, bool isRead, bool isOldMessage = false) {
     // Create a container for the message tile
     lv_obj_t *tile = lv_obj_create(devices_messages_cont);
     lv_obj_set_width(tile, lv_pct(100));
     lv_obj_set_height(tile, LV_SIZE_CONTENT); // Let height grow with content
-    lv_obj_set_style_bg_color(tile, lv_palette_lighten(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    
+    // Different colors for new vs old messages
+    if (isOldMessage) {
+        lv_obj_set_style_bg_color(tile, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_bg_color(tile, lv_palette_lighten(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    }
+    
     lv_obj_set_style_radius(tile, 8, LV_PART_MAIN);
     lv_obj_set_style_border_width(tile, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(tile, 6, LV_PART_MAIN);
@@ -1003,8 +1053,7 @@ void devicesMessages_add(const String& msg, bool isRead = false)
     // Date/time label with read status indicator
     lv_obj_t *dt_label = lv_label_create(tile);
     String dt = devicesMessages_get_datetime_str();
-    String dt_with_status = dt;
-    lv_label_set_text(dt_label, dt_with_status.c_str());
+    lv_label_set_text(dt_label, dt.c_str());
     lv_obj_set_style_text_color(dt_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
     lv_obj_align(dt_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -1013,7 +1062,13 @@ void devicesMessages_add(const String& msg, bool isRead = false)
     lv_label_set_text(msg_label, msg.c_str());
     lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(msg_label, lv_pct(100));
-    lv_obj_set_style_text_color(msg_label, lv_color_black(), LV_PART_MAIN);
+    
+    // Different text color for old vs new messages
+    if (isOldMessage) {
+        lv_obj_set_style_text_color(msg_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_text_color(msg_label, lv_color_black(), LV_PART_MAIN);
+    }
     lv_obj_align(msg_label, LV_ALIGN_TOP_LEFT, 0, 22);
 
     // Store read status in user data for later retrieval
@@ -1031,28 +1086,136 @@ void devicesMessages_add(const String& msg, bool isRead = false)
                 // Update user data
                 lv_obj_set_user_data(tile, (void*)1);
                 
-                // Find and update the date/time label
-                lv_obj_t *dt_label = lv_obj_get_child(tile, 0); // First child is date/time label
-                if (dt_label) {
-                    const char *current_text = lv_label_get_text(dt_label);
-                    String text_str = String(current_text);
-                    
-                    // Replace single tick with double tick
-                    //text_str.replace(SINGLE_TICK, DOUBLE_TICK);
-                    lv_label_set_text(dt_label, text_str.c_str());
-                }
-                
                 Serial.println("Message marked as read");
             }
         }
     }, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
 
-    // Save tile in stack
+    return tile;
+}
+
+// Call this to add a message tile to the stack and update the UI
+void devicesMessages_add(const String& msg, bool isRead = false)
+{
+    if (!devices_messages_cont) return;
+
+    Serial.printf("Adding message - isRead: %s, msg: %.20s...\n", isRead ? "true" : "false", msg.c_str());
+
+    // Store the message in displayed buffer for tracking
+    message_t display_msg = {msg, isRead, millis()};
+    displayed_messages_buf.push(display_msg);
+    
+    // Keep displayed buffer size manageable
+    while (displayed_messages_buf.size() > DEVICES_MESSAGES_MAX) {
+        displayed_messages_buf.pop();
+    }
+
+    // If this is a new unread message and we have old messages, create separator if needed
+    //if (!isRead && old_messages_buf.size() > 0 && !separator_created) {
+    //    Serial.println("Creating separator for new message");
+    //    devicesMessages_create_separator();
+    //}
+
+    // If full, handle overflow
+    if (devices_messages_count >= DEVICES_MESSAGES_MAX) {
+        lv_obj_t *oldest = devices_message_tiles[0];
+        if (oldest) lv_obj_del(oldest);
+        for (int i = 1; i < DEVICES_MESSAGES_MAX; ++i) {
+            devices_message_tiles[i-1] = devices_message_tiles[i];
+        }
+        devices_messages_count--;
+    }
+
+    // Create and add the tile
+    lv_obj_t *tile = devicesMessages_create_tile(msg, isRead, isRead);
     devices_message_tiles[devices_messages_count++] = tile;
 
     // Scroll to bottom (newest)
     lv_obj_scroll_to_y(devices_messages_cont, 0, LV_ANIM_ON);
+}
+
+// Function to mark all current messages as read and move them to old messages
+void devicesMessages_mark_all_read() {
+    Serial.printf("Marking %d displayed messages as read\n", displayed_messages_buf.size());
+    
+    // Move messages from displayed buffer to old messages buffer
+    while (displayed_messages_buf.size()) {
+        message_t msg = displayed_messages_buf.front();
+        msg.isRead = true; // Mark as read
+        old_messages_buf.push(msg);
+        displayed_messages_buf.pop();
+    }
+    
+    // Also clear any remaining messages in msg_buf that haven't been displayed yet
+    while (msg_buf.size()) {
+        message_t msg = msg_buf.front();
+        msg.isRead = true; // Mark as read
+        old_messages_buf.push(msg);
+        msg_buf.pop();
+    }
+    
+    Serial.printf("Old messages buffer now has %d messages\n", old_messages_buf.size());
+    
+    // Keep only the latest old messages (limit the buffer size)
+    while (old_messages_buf.size() > DEVICES_MESSAGES_MAX) {
+        old_messages_buf.pop();
+    }
+}
+
+// Function to rebuild the messages display with separation
+void devicesMessages_rebuild_display() {
+    if (!devices_messages_cont) return;
+    
+    Serial.printf("Rebuilding display - old messages: %d\n", old_messages_buf.size());
+    
+    // Clear all existing message tiles
+    for (int i = 0; i < devices_messages_count; ++i) {
+        if (devices_message_tiles[i]) {
+            lv_obj_del(devices_message_tiles[i]);
+            devices_message_tiles[i] = NULL;
+        }
+    }
+    devices_messages_count = 0;
+    
+    // Clear displayed messages buffer since we're rebuilding
+    while (displayed_messages_buf.size()) {
+        displayed_messages_buf.pop();
+    }
+    
+    // Remove separator if it exists
+    if (separator_tile) {
+        lv_obj_del(separator_tile);
+        separator_tile = NULL;
+        separator_created = false;
+    }
+    
+    // First add old messages (they will appear at top due to COLUMN_REVERSE)
+    std::queue<message_t> temp_old = old_messages_buf;
+    std::queue<message_t> old_stack;
+    
+    // Reverse the order to display oldest first in old messages section
+    while (temp_old.size()) {
+        old_stack.push(temp_old.front());
+        temp_old.pop();
+    }
+    
+    // Add old messages to display if any exist
+    if (old_stack.size() > 0) {
+        // First create separator
+        //devicesMessages_create_separator();
+        
+        // Then add old messages
+        while (old_stack.size()) {
+            message_t msg = old_stack.front();
+            lv_obj_t *tile = devicesMessages_create_tile(msg.message, true, true);
+            devices_message_tiles[devices_messages_count++] = tile;
+            // Don't add old messages back to displayed_messages_buf since they're already marked as read
+            old_stack.pop();
+        }
+        
+        Serial.printf("Added %d old messages to display\n", devices_messages_count);
+    }
 }
 
 static void radio_rxtx_cb(lv_event_t *e)
@@ -1483,7 +1646,7 @@ void factory_ui()
     lv_obj_set_tile(tileview, t2, LV_ANIM_OFF);
 
     
-    //msg_buf.push({String("Welcome to use T-Watch!"), true, millis()}); // Initial message
+    //msg_buf.push({String("Welcome to use T!"), false, millis()}); // Initial message
     //playNotificationSound();
 }
 

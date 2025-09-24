@@ -115,3 +115,9 @@ void settingRadio();
 void initializeAudio();
 void playNotificationSound();
 void audioNotificationTask(void *params);
+
+// Message management functions
+void devicesMessages_create_separator();
+lv_obj_t* devicesMessages_create_tile(const String& msg, bool isRead, bool isOldMessage);
+void devicesMessages_mark_all_read();
+void devicesMessages_rebuild_display();
