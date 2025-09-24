@@ -27,9 +27,9 @@ bool checkMessage(String& msg)
         return device_id == DEVICE_ID;
     }
     case GROUP_HEADER:
-        Serial.println("Multicast group ID: " + String(msg[2], HEX));
+        Serial.println("Multicast group ID: " + String(msg[1], HEX));
         msg.remove(0, 1);
-        return msg[2] == GROUP_ID;
+        return msg[1] == GROUP_ID;
     case BROADCAST_HEADER:
         Serial.println("Broadcast entered");
         msg.remove(0, 1);
