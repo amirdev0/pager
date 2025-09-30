@@ -917,32 +917,18 @@ void devicesInformation(lv_obj_t *parent)
     lv_obj_add_event_cb(slider, slider_event_cb, LV_EVENT_VALUE_CHANGED, slider_label);
     lv_obj_align_to(slider_label, slider, LV_ALIGN_CENTER, 0, 0);
 
-
-    lv_obj_t *label1 = lv_label_create(info_table);
-    String text1 = "Radio:";
-    static lv_style_t label_style1;
-    lv_style_init(&label_style1);
-    lv_style_set_text_color(&label_style1, lv_color_white());
-    lv_obj_add_style(label1, &label_style1, LV_PART_MAIN);
-    lv_label_set_text(label1, text1.c_str());
-    lv_style_set_pad_top(&label_style1, 16);
-    lv_style_set_pad_hor(&label_style1, 20);
-    lv_obj_set_style_text_font(label1, &font_jetBrainsMono, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label1, DEFAULT_COLOR, LV_PART_MAIN);
-    lv_obj_align(label1, LV_ALIGN_BOTTOM_MID, 32, 0);
-
-    lv_obj_t *dd ;
-    dd = lv_dropdown_create(info_table);
-    lv_dropdown_set_options(dd, "On\n"
-                                "Off"
-                           );
-    lv_dropdown_set_selected(dd, 1);
-    lv_obj_add_flag(dd, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(dd, 170, 50);
-    lv_obj_add_event_cb(dd, radio_rxtx_cb,
-                        LV_EVENT_VALUE_CHANGED
-                        , NULL);
-    lv_obj_align_to(dd, label1, LV_ALIGN_BOTTOM_MID, 16, 0);
+    // Radio is always ON - no UI control needed
+    // Automatically start radio in receive mode
+    //lv_timer_resume(transmitTask);
+    radioTransmitFlag = false;
+    
+    Serial.print(F("[Radio] Starting to listen ... "));
+    if (radio.startReceive() == RADIOLIB_ERR_NONE) {
+        Serial.println(F("success!"));
+    } else {
+        Serial.println(F("failed "));
+    }
+    transmitFlag = false;
 
     // label = lv_label_create(parent);
     // lv_label_set_text(label, "LightSleep:");
