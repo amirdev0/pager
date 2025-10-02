@@ -27,7 +27,7 @@ LV_IMG_DECLARE(watch_if_sec2);
 
 LV_FONT_DECLARE(font_siegra);
 LV_FONT_DECLARE(font_sandbox);
-LV_FONT_DECLARE(font_jetBrainsMono);
+LV_FONT_DECLARE(lv_font_montserrat_22);
 LV_FONT_DECLARE(font_firacode_60);
 LV_FONT_DECLARE(font_ununtu_18);
 

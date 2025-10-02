@@ -897,7 +897,7 @@ void devicesInformation(lv_obj_t *parent)
     lv_obj_add_style(label, &label_style, LV_PART_MAIN);
     lv_style_set_pad_hor(&label_style, 52);
     lv_label_set_text(label, text.c_str());
-    lv_obj_set_style_text_font(label, &font_jetBrainsMono, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_22, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
     lv_obj_align_to(label, info_table, LV_ALIGN_TOP_MID, 32, 0);
 
@@ -955,7 +955,7 @@ void devicesMessages(lv_obj_t *parent)
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_label_set_text(label, "Xabarlar");
-    lv_obj_set_style_text_font(label, &font_jetBrainsMono, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_22, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, DEFAULT_COLOR, LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 10);
 
@@ -1011,7 +1011,7 @@ void devicesMessages_create_separator() {
     //lv_obj_t *sep_label = lv_label_create(separator_tile);
     //lv_label_set_text(sep_label, "Old messages");
     //lv_obj_set_style_text_color(sep_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
-    //lv_obj_set_style_text_font(sep_label, &font_jetBrainsMono, LV_PART_MAIN);
+    //lv_obj_set_style_text_font(sep_label, &lv_font_montserrat_22, LV_PART_MAIN);
     //lv_obj_center(sep_label);
 
     separator_created = true;
@@ -1046,8 +1046,10 @@ lv_obj_t* devicesMessages_create_tile(const String& msg, bool isRead, bool isOld
     // Message label
     lv_obj_t *msg_label = lv_label_create(tile);
     lv_label_set_text(msg_label, msg.c_str());
+    lv_obj_set_style_text_font(msg_label, &lv_font_montserrat_20, LV_PART_MAIN);
     lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(msg_label, lv_pct(100));
+
     
     // Different text color for old vs new messages
     if (isOldMessage) {
@@ -1632,7 +1634,7 @@ void factory_ui()
     lv_obj_set_tile(tileview, t2, LV_ANIM_OFF);
 
     
-    //msg_buf.push({String("Welcome to use T!"), false, millis()}); // Initial message
+    msg_buf.push({String("Welcome to use T!"), false, millis()}); // Initial message
     //playNotificationSound();
 }
 
