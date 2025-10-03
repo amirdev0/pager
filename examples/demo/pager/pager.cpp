@@ -907,7 +907,7 @@ void devicesInformation(lv_obj_t *parent)
     lv_slider_set_range(slider, 5, 255);
     lv_obj_add_style(slider, &style_indicator, LV_PART_INDICATOR);
     lv_obj_add_style(slider, &style_knob, LV_PART_KNOB);
-    lv_obj_align_to(slider, label, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+    lv_obj_align_to(slider, label, LV_ALIGN_TOP_MID, 0, 10);
     lv_slider_set_value(slider, watch.getBrightness() * 255. / 100, LV_ANIM_OFF);
 
     /*Create a label below the slider*/
